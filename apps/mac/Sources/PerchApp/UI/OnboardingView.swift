@@ -1,0 +1,186 @@
+import AppKit
+import PerchKit
+import SwiftUI
+
+/// The first screen.
+///
+/// It reports rather than interrogates: Perch can see which agents and terminals are on
+/// this Mac, so asking you to tick boxes about your own machine would be asking a question
+/// it already knows the answer to.
+///
+/// It appears once — when at least one agent is installed and none of them are wired up —
+/// and never again. An app that greets you every launch is an app you learn to dismiss
+/// without reading.
+struct OnboardingView: View {
+    let model: AppModel
+    let onDone: () -> Void
+
+    @State private var tools = EnvironmentScan.run()
+    @State private var isWorking = false
+    @State private var message: String?
+
+    private var agents: [DetectedTool] { tools.filter { $0.kind == .agent } }
+    private var terminals: [DetectedTool] { tools.filter { $0.kind == .terminal } }
+    private var editors: [DetectedTool] { tools.filter { $0.kind == .editor } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(t("Approve Claude Code from the notch"))
+                    .font(.title2).bold()
+                Text(t("Here is what Perch found on this Mac."))
+                    .foregroundStyle(.secondary)
+            }
+
+            if agents.isEmpty {
+                Text(t("No agent CLI found. Install Claude Code, then reopen Perch."))
+                    .foregroundStyle(.orange)
+            } else {
+                group(t("Agents"), agents)
+            }
+            if !terminals.isEmpty { group(t("Terminals"), terminals) }
+            if !editors.isEmpty { group(t("Editors"), editors) }
+
+            if let message {
+                Text(message).font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+
+            HStack {
+                Button(t("Set up this Mac")) { configure() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(isWorking || agents.isEmpty)
+                if isWorking { ProgressView().controlSize(.small) }
+                Spacer()
+                Button(t("Not now"), action: onDone)
+            }
+        }
+        .padding(24)
+        .frame(width: 560, height: 460)
+    }
+
+    private func group(_ title: String, _ items: [DetectedTool]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.headline)
+            ForEach(items) { tool in
+                HStack(spacing: 8) {
+                    Image(systemName: symbol(for: tool))
+                        .foregroundStyle(colour(for: tool))
+                        .frame(width: 16)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(tool.name)
+                        Text(tool.evidence).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if tool.isConfigured == true {
+                        Text(t("ready")).font(.caption).foregroundStyle(.green)
+                    }
+                }
+            }
+        }
+    }
+
+    private func symbol(for tool: DetectedTool) -> String {
+        switch tool.isConfigured {
+        case true: return "checkmark.circle.fill"
+        case false: return "circle"
+        // Terminals need nothing installed, so an empty circle would imply work to do.
+        case nil: return "checkmark.circle"
+        }
+    }
+
+    private func colour(for tool: DetectedTool) -> Color {
+        tool.isConfigured == true ? .green : .secondary
+    }
+
+    /// Runs the same scripts the README documents rather than reimplementing them in
+    /// Swift: one behaviour, one place to fix it, and what happened is inspectable
+    /// afterwards in the files they touched.
+    private func configure() {
+        isWorking = true
+        message = nil
+
+        Task {
+            let root = Bundle.main.bundleURL
+                .deletingLastPathComponent()  // build/
+                .deletingLastPathComponent()  // mac/
+                .deletingLastPathComponent()  // apps/
+                .deletingLastPathComponent()  // repo root
+            var done: [String] = []
+
+            if run(root.appendingPathComponent("scripts/install-hooks.sh"), ["--global"]) {
+                done.append("Claude Code")
+            }
+            if agents.contains(where: { $0.name == "Codex" }),
+                run(root.appendingPathComponent("scripts/install-hooks.sh"), ["--codex"])
+            {
+                done.append("Codex")
+            }
+            if !editors.isEmpty,
+                run(root.appendingPathComponent("scripts/install-extension.sh"), [])
+            {
+                done.append("editor extension")
+            }
+
+            tools = EnvironmentScan.run()
+            isWorking = false
+            message =
+                done.isEmpty
+                ? t("Nothing could be set up automatically — see the README.")
+                // The part everyone misses, said last so it is the thing left on screen.
+                : t(
+                    "Set up: %@.\n\nRestart any Claude Code session you already have open — "
+                        + "hooks are read once, when a session starts, so a running one "
+                        + "ignores them and the notch stays empty.",
+                    done.joined(separator: ", "))
+        }
+    }
+
+    private func run(_ script: URL, _ arguments: [String]) -> Bool {
+        guard FileManager.default.isExecutableFile(atPath: script.path) else { return false }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = [script.path] + arguments
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        } catch {
+            return false
+        }
+    }
+}
+
+/// Hosts the first screen. Same shape as the settings window, and for the same reason:
+/// an accessory app has nothing that would otherwise bring a window forward.
+@MainActor
+final class OnboardingWindowController {
+    private var window: NSWindow?
+
+    func show(model: AppModel) {
+        if let window {
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 460),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false)
+        window.title = "Perch"
+        window.isReleasedWhenClosed = false
+        window.center()
+        window.contentView = NSHostingView(
+            rootView: OnboardingView(model: model) { [weak window] in window?.close() })
+
+        self.window = window
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+    }
+}

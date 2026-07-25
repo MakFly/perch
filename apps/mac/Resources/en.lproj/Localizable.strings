@@ -1,0 +1,167 @@
+/* Perch — English.
+
+   Keys are the English text itself, so a missing translation falls back to something
+   readable instead of to a dotted identifier. */
+
+/* Panel */
+"Perch" = "Perch";
+"%lld sessions" = "%lld sessions";
+"1 session" = "1 session";
+"waiting for Claude Code" = "waiting for Claude Code";
+"activity" = "activity";
+"stats" = "stats";
+"rank" = "rank";
+"recent" = "recent";
+"Settings" = "Settings";
+"Close (esc)" = "Close (esc)";
+"No activity yet" = "No activity yet";
+"Install the hooks, then restart your Claude Code sessions." = "Install the hooks, then restart your Claude Code sessions.";
+"Hooks are installed twice" = "Hooks are installed twice";
+"%lld projects install Perch on top of the global hooks, so every event fires twice. The copies are dropped, but the second hook still runs: ./scripts/install-hooks.sh --uninstall <project>." = "%lld projects install Perch on top of the global hooks, so every event fires twice. The copies are dropped, but the second hook still runs: ./scripts/install-hooks.sh --uninstall <project>.";
+"Leaderboard" = "Leaderboard";
+"Opt in to compare your usage with other developers." = "Opt in to compare your usage with other developers.";
+
+/* Session cards */
+"session" = "session";
+"You: %@" = "You: %@";
+"Compacting context…" = "Compacting context…";
+"Waiting for you" = "Waiting for you";
+"Waiting for your approval" = "Waiting for your approval";
+"Waiting for your answer" = "Waiting for your answer";
+"Waiting for your input" = "Waiting for your input";
+"Ended on a failure" = "Ended on a failure";
+"%lld agents" = "%lld agents";
+"Hide sessions in %@" = "Hide sessions in %@";
+"Silence prompts starting with “%@…”" = "Silence prompts starting with “%@…”";
+
+/* Jump */
+"Jump to iTerm" = "Jump to iTerm";
+"Jump to Terminal" = "Jump to Terminal";
+"Open %@" = "Open %@";
+"No terminal recorded" = "No terminal recorded";
+
+/* Quota */
+"Plan" = "Plan";
+"5h session" = "5h session";
+"7d all models" = "7d all models";
+"7d Opus" = "7d Opus";
+"7d Sonnet" = "7d Sonnet";
+"No plan limits on this account — API key, Bedrock or Vertex." = "No plan limits on this account — API key, Bedrock or Vertex.";
+"Not connected. Run ./scripts/usage-bridge.sh, then restart your sessions." = "Not connected. Run ./scripts/usage-bridge.sh, then restart your sessions.";
+
+/* Tokens */
+"Tokens" = "Tokens";
+"indexing…" = "indexing…";
+"today" = "today";
+"all time" = "all time";
+"cache read" = "cache read";
+"No usage indexed yet." = "No usage indexed yet.";
+
+/* Permission card */
+"Allow" = "Allow";
+"Always" = "Always";
+"Deny" = "Deny";
+"%lld waiting" = "%lld waiting";
+
+/* Questions and plans */
+"Question" = "Question";
+"multi" = "multi";
+"%lld of %lld" = "%lld of %lld";
+"Back" = "Back";
+"Next" = "Next";
+"Submit" = "Submit";
+"Submit all" = "Submit all";
+"Answer in terminal" = "Answer in terminal";
+"Approve" = "Approve";
+"Reject" = "Reject";
+"Send feedback" = "Send feedback";
+"Tell Claude what to change…" = "Tell Claude what to change…";
+
+/* Settings — panes */
+"General" = "General";
+"Filters" = "Filters";
+"Integrations" = "Integrations";
+"About" = "About";
+
+/* Settings — general */
+"Quiet scenes" = "Quiet scenes";
+"Perch stays silent while any of these is true — no panel, no sound, approvals included. Requests still queue and the session is still held; a dot marks them." = "Perch stays silent while any of these is true — no panel, no sound, approvals included. Requests still queue and the session is still held; a dot marks them.";
+"A Focus mode is on" = "A Focus mode is on";
+"The screen is locked or asleep" = "The screen is locked or asleep";
+"The screen is being recorded or shared" = "The screen is being recorded or shared";
+"Quiet hours" = "Quiet hours";
+"Crosses midnight when the end is earlier than the start." = "Crosses midnight when the end is earlier than the start.";
+"Silence during a time range" = "Silence during a time range";
+"From" = "From";
+"Until" = "Until";
+"crosses midnight" = "crosses midnight";
+"Switcher" = "Switcher";
+"Tap to open and pick with ↑↓, or hold and press again to cycle." = "Tap to open and pick with ↑↓, or hold and press again to cycle.";
+"Enable the global shortcut" = "Enable the global shortcut";
+"Shortcut" = "Shortcut";
+"Press a shortcut…" = "Press a shortcut…";
+"Needs ⌃, ⌥ or ⌘" = "Needs ⌃, ⌥ or ⌘";
+"Notch" = "Notch";
+"Reset to what macOS reports" = "Reset to what macOS reports";
+"Idle sessions" = "Idle sessions";
+"Forget a silent session after" = "Forget a silent session after";
+"Never" = "Never";
+"30 minutes" = "30 minutes";
+"1 hour" = "1 hour";
+"2 hours" = "2 hours";
+"8 hours" = "8 hours";
+"24 hours" = "24 hours";
+"Notifications" = "Notifications";
+"Stay quiet when the asking terminal is already in front" = "Stay quiet when the asking terminal is already in front";
+"Play sounds" = "Play sounds";
+"Open the panel when a task finishes" = "Open the panel when a task finishes";
+
+/* Settings — filters */
+"Presets" = "Presets";
+"Your filters" = "Your filters";
+"Right-clicking a session card adds one too." = "Right-clicking a session card adds one too.";
+"Directory" = "Directory";
+"Prompt" = "Prompt";
+"contains" = "contains";
+"starts with" = "starts with";
+"pattern" = "pattern";
+"Add" = "Add";
+"Remove" = "Remove";
+"No filters of your own yet." = "No filters of your own yet.";
+"Blocked launcher apps" = "Blocked launcher apps";
+"Choose App…" = "Choose App…";
+"Block" = "Block";
+"Unblock" = "Unblock";
+"Nothing blocked." = "Nothing blocked.";
+
+/* Settings — integrations */
+"Hooks" = "Hooks";
+"Claude Code (global)" = "Claude Code (global)";
+"Codex" = "Codex";
+"not installed" = "not installed";
+"%lld events" = "%lld events";
+"%lld projects also install Perch on top of the global hooks. Every event fires twice; Perch shows it once. Remove the project copy with ./scripts/install-hooks.sh --uninstall <project>." = "%lld projects also install Perch on top of the global hooks. Every event fires twice; Perch shows it once. Remove the project copy with ./scripts/install-hooks.sh --uninstall <project>.";
+"Plan quota" = "Plan quota";
+"Connected" = "Connected";
+"Connection" = "Connection";
+"Statusline bridge connected" = "Statusline bridge connected";
+"Tell me when a window fills up" = "Tell me when a window fills up";
+"Show what is left rather than what is used" = "Show what is left rather than what is used";
+"Also read the quota from Anthropic directly" = "Also read the quota from Anthropic directly";
+"used" = "used";
+"left" = "left";
+"Show what is used instead" = "Show what is used instead";
+"Codex trust" = "Codex trust";
+"Run /hooks in Codex and approve the Perch entries." = "Run /hooks in Codex and approve the Perch entries.";
+
+/* Menu, notifications */
+"Settings…" = "Settings…";
+"Check for Updates…" = "Check for Updates…";
+"Mute sounds" = "Mute sounds";
+"Unmute sounds" = "Unmute sounds";
+"Quit Perch" = "Quit Perch";
+"Turn finished" = "Turn finished";
+"Turn ended on a failure" = "Turn ended on a failure";
+"Claude Code" = "Claude Code";
+"Notify me when a turn ends somewhere I cannot see" = "Notify me when a turn ends somewhere I cannot see";
+"A macOS notification, silent — Perch already owns the sound. It stays quiet in a quiet scene, during quiet hours, and while you are looking at the terminal that raised it. Clicking it jumps there." = "A macOS notification, silent — Perch already owns the sound. It stays quiet in a quiet scene, during quiet hours, and while you are looking at the terminal that raised it. Clicking it jumps there.";

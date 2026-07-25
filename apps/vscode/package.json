@@ -1,0 +1,27 @@
+{
+  "name": "perch-jump",
+  "displayName": "Perch — jump to terminal",
+  "description": "Lets Perch focus the exact terminal tab a Claude Code session is running in.",
+  "version": "0.1.0",
+  "publisher": "kweli",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onUri",
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "perch.focusTerminalByTty",
+        "title": "Perch: Focus terminal by tty"
+      }
+    ]
+  }
+}

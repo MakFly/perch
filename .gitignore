@@ -1,0 +1,14 @@
+.DS_Store
+
+# Swift
+apps/mac/.build/
+dist/
+apps/mac/build/
+*.xcuserstate
+
+# API
+node_modules/
+apps/api/.env
+
+# Local runtime
+*.perch-backup

@@ -1,0 +1,196 @@
+import PerchKit
+import SwiftUI
+
+/// Subscription quota: how much of the plan is left, as opposed to what it cost.
+///
+/// This is the number people actually check, and it is the one Perch could not show until
+/// the statusline bridge existed — so when it is missing, the view says how to get it
+/// rather than rendering a plausible-looking zero.
+struct UsageLimitsView: View {
+    let reading: UsageLimitsReader.Reading?
+    /// Remote hosts report their own quota. A build server signed in as another account
+    /// has another budget, so they are listed apart rather than merged.
+    var remote: [String: UsageLimitsReader.Reading] = [:]
+    /// Spent, or left. The same number read two ways — and which one someone reads without
+    /// having to think about it is a preference, not a default worth arguing over.
+    var showsRemaining = false
+    /// Nil where there is nothing to toggle from, such as the off-screen preview.
+    var onToggle: (() -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            header
+
+            if let reading, !reading.limits.isEmpty {
+                ForEach(reading.limits.windows) { window in
+                    WindowBar(window: window, showsRemaining: showsRemaining)
+                }
+            } else {
+                Text(emptyMessage)
+                    .font(Theme.mono(9))
+                    .foregroundStyle(Theme.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            ForEach(remote.keys.sorted(), id: \.self) { host in
+                if let hostReading = remote[host], !hostReading.limits.isEmpty {
+                    Text(host)
+                        .font(Theme.mono(9, .medium))
+                        .foregroundStyle(Theme.tertiary)
+                        .padding(.top, 2)
+                    ForEach(hostReading.limits.windows) { window in
+                        WindowBar(window: window, showsRemaining: showsRemaining)
+                    }
+                }
+            }
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            Text(t("Plan"))
+                .font(Theme.label(13, .semibold))
+                .foregroundStyle(Theme.primary)
+
+            // The word is the control. A settings trip to flip a number you are looking at
+            // is a trip nobody makes, so the label says which reading you are on and
+            // clicking it says the other one.
+            if let onToggle {
+                Button(action: onToggle) {
+                    Text(showsRemaining ? t("left") : t("used"))
+                        .font(Theme.mono(9))
+                        .foregroundStyle(Theme.tertiary)
+                }
+                .buttonStyle(.plain)
+                .help(t("Show what is used instead"))
+            }
+
+            Spacer()
+
+            if let updated = reading?.updatedAt {
+                Text(updated.formatted(.relative(presentation: .numeric)))
+                    .font(Theme.mono(9))
+                    .foregroundStyle(Theme.tertiary)
+            }
+        }
+    }
+
+    private var emptyMessage: String {
+        if reading?.limits.available == false {
+            return t("No plan limits on this account — API key, Bedrock or Vertex.")
+        }
+        return t("Not connected. Run ./scripts/usage-bridge.sh, then restart your sessions.")
+    }
+}
+
+/// The same quota as one dense line, for the panel header: `5h 42% 5h · 7d 88% 4d`.
+///
+/// The full bars answer "how am I doing"; this answers "am I about to be cut off" without
+/// spending a third of the panel on it.
+struct UsageLimitsStrip: View {
+    let reading: UsageLimitsReader.Reading?
+    var showsRemaining = false
+
+    var body: some View {
+        if let reading, !reading.limits.isEmpty {
+            HStack(spacing: 8) {
+                ForEach(reading.limits.windows.prefix(2)) { window in
+                    HStack(spacing: 3) {
+                        Text(short(window.id))
+                            .font(Theme.mono(9))
+                            .foregroundStyle(Theme.tertiary)
+                        // The colour always follows what is *spent*, whichever number is
+                        // printed: red has one meaning here, and it is not "12".
+                        Text(percentage(window.window))
+                            .font(Theme.mono(9, .semibold))
+                            .foregroundStyle(tint(window.window.utilization ?? 0))
+                            .monospacedDigit()
+                        // A percentage on its own does not answer the question people
+                        // actually have at 90%, which is "how long until it comes back".
+                        if let left = window.window.timeLeft() {
+                            Text(left)
+                                .font(Theme.mono(9))
+                                .foregroundStyle(Theme.tertiary)
+                                .monospacedDigit()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func percentage(_ window: RateLimitWindow) -> String {
+        let value = showsRemaining ? (window.remaining ?? 100) : (window.utilization ?? 0)
+        return String(format: "%.0f%%", value)
+    }
+
+    /// The header has room for `5h`, not `5h session`.
+    private func short(_ id: String) -> String {
+        switch id {
+        case "five_hour": return "5h"
+        case "seven_day": return "7d"
+        case "seven_day_opus": return "7d opus"
+        case "seven_day_sonnet": return "7d sonnet"
+        default: return id
+        }
+    }
+
+    private func tint(_ used: Double) -> Color {
+        switch used {
+        case ..<75: return Theme.active
+        case ..<95: return Theme.warning
+        default: return Theme.danger
+        }
+    }
+}
+
+private struct WindowBar: View {
+    let window: NamedWindow
+    var showsRemaining = false
+
+    private var used: Double { window.window.utilization ?? 0 }
+
+    /// Green until it matters, amber when the end is in sight, red once it is spent.
+    private var tint: Color {
+        switch used {
+        case ..<75: return Theme.active
+        case ..<95: return Theme.warning
+        default: return Theme.danger
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Text(t(window.title))
+                    .font(Theme.mono(10))
+                    .foregroundStyle(Theme.secondary)
+
+                Spacer()
+
+                // The bar still fills with what is spent — a bar that empties as you use
+                // it would say the opposite of the colour beside it.
+                Text(String(format: "%.0f%%", showsRemaining ? 100 - used : used))
+                    .font(Theme.mono(10, .semibold))
+                    .foregroundStyle(tint)
+
+                if let resets = window.window.resetsAt {
+                    Text(resets.formatted(.relative(presentation: .numeric)))
+                        .font(Theme.mono(9))
+                        .foregroundStyle(Theme.tertiary)
+                }
+            }
+
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Theme.hairline)
+                    Capsule()
+                        .fill(tint)
+                        .frame(width: geometry.size.width * min(1, max(0, used / 100)))
+                }
+            }
+            .frame(height: 4)
+        }
+    }
+}

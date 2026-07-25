@@ -1,0 +1,686 @@
+import AppKit
+import Foundation
+import Observation
+import PerchKit
+
+/// Wires the hook transport to the UI.
+@MainActor
+@Observable
+final class AppModel {
+    let activity = ActivityStore()
+    let tasks = TaskStore()
+    let permissions = PermissionBroker()
+    let usage = UsageModel()
+    let notch: NotchController
+    let scenes = SceneMonitor()
+    let license = LicenseModel()
+    let updates = UpdateChecker()
+
+    /// Whether Perch is allowed to take the screen right now, and make a noise doing it.
+    private(set) var quiet = QuietSettings.load()
+    /// Which sound plays for which event.
+    private(set) var sounds = SoundSettings.load()
+
+    func updateSounds(_ settings: SoundSettings) {
+        sounds = settings.sanitised
+        sounds.save()
+    }
+
+    /// The ⌘Tab-style session switcher.
+    private(set) var switcher = SessionSwitcher()
+
+    @ObservationIgnored private var server: EventServer?
+    /// Recognises the same event arriving once per hook entry that matched it.
+    @ObservationIgnored private var echoes = DuplicateFilter()
+    @ObservationIgnored private let hotKey = GlobalHotKey()
+    @ObservationIgnored private let settingsWindow = SettingsWindowController()
+
+    @ObservationIgnored private let onboardingWindow = OnboardingWindowController()
+
+    @discardableResult
+    func showSettings() -> Bool {
+        settingsWindow.show(model: self)
+    }
+
+    func showOnboarding() {
+        onboardingWindow.show(model: self)
+    }
+
+    init(notch: NotchController) {
+        self.notch = notch
+    }
+
+    func updateQuiet(_ settings: QuietSettings) {
+        quiet = settings
+        settings.save()
+    }
+
+    var preferences: Preferences { activity.preferences }
+
+    /// Applies everything a preferences change can touch, in one place, so no setting can
+    /// be saved and then quietly not take effect until the next launch.
+    func updatePreferences(_ next: Preferences) {
+        let sanitised = next.sanitised
+        activity.preferences = sanitised
+        sanitised.save()
+        usage.apply(preferences: sanitised)
+        notch.applyTuning(
+            width: sanitised.notchWidthAdjustment, height: sanitised.notchHeightAdjustment)
+        updates.wantsBeta = sanitised.betaUpdates
+        registerSwitcherShortcut()
+    }
+
+    private func registerSwitcherShortcut() {
+        let preferences = activity.preferences
+        guard preferences.switcherEnabled, license.allows(.switcher) else {
+            hotKey.unregister()
+            return
+        }
+        hotKey.register(
+            keyCode: preferences.switcherKeyCode,
+            modifiers: preferences.switcherModifiers,
+            onPress: { [weak self] reverse in
+                self?.switcherEvent(.shortcutPressed(reverse: reverse))
+            },
+            onRelease: { [weak self] in
+                self?.switcherEvent(.modifierReleased)
+            })
+    }
+
+    /// Keys that only mean something while the switcher is open, watched only then.
+    ///
+    /// The tap half of the switcher — press once, pick with ↑↓, Enter — was implemented in
+    /// `SessionSwitcher` and unit-tested, and nothing ever sent it an `.arrow`: the Carbon
+    /// hot key only reports press and release. So the mode the settings pane advertises
+    /// did not exist at runtime, which is worse than not having it.
+    ///
+    /// A *local* monitor, not a global one: it only sees keys while Perch itself is key,
+    /// which is exactly while the panel is up, and it needs no Accessibility permission —
+    /// the one thing this app never asks for.
+    @ObservationIgnored private var switcherKeys: Any?
+
+    private func watchSwitcherKeys() {
+        guard switcherKeys == nil else { return }
+        switcherKeys = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
+            [weak self] event in
+            guard let self, switcher.isOpen else { return event }
+            switch Int(event.keyCode) {
+            case 126: switcherEvent(.arrow(down: false))  // ↑
+            case 125: switcherEvent(.arrow(down: true))  // ↓
+            case 36, 76: switcherEvent(.confirmed)  // Return, Enter
+            case 53: switcherEvent(.cancelled)  // Escape
+            default: return event
+            }
+            // Swallowed: an arrow that also scrolls the panel underneath would move the
+            // selection twice.
+            return nil
+        }
+    }
+
+    private func stopWatchingSwitcherKeys() {
+        if let switcherKeys { NSEvent.removeMonitor(switcherKeys) }
+        switcherKeys = nil
+    }
+
+    /// Answers the switcher's events. Kept here rather than in the view so the shortcut
+    /// works whether or not the panel happens to be on screen.
+    private func switcherEvent(_ event: SessionSwitcher.Event) {
+        switcher.count = activity.activeSessions.count
+        let outcome = switcher.handle(event)
+        // Watch keys exactly while there is something to steer, and stop the moment there
+        // is not — a monitor left installed swallows Escape for the whole app.
+        if switcher.isOpen { watchSwitcherKeys() } else { stopWatchingSwitcherKeys() }
+        switch outcome {
+        case .open, .moved:
+            notch.expand()
+        case .jump(let index):
+            let sessions = activity.activeSessions
+            if sessions.indices.contains(index) {
+                TerminalJumper.jump(to: sessions[index].client)
+            }
+            notch.dismiss()
+        case .close:
+            notch.dismiss()
+        case .nothing:
+            break
+        }
+    }
+
+    func start() {
+        usage.apply(preferences: activity.preferences)
+        // A quota crossing is worth a glance, never an interruption: it goes through the
+        // same policy as everything else, so it stays silent during a screen share and
+        // never takes a panel someone is already using.
+        usage.onQuotaEvent = { [weak self] event in
+            guard let self else { return }
+            switch event {
+            case .crossed:
+                if announce(.usageWarning) == .full { notch.reveal() }
+            // Coming back under the line is good news, and good news does not get to take
+            // the screen. A sound if you asked for one, and the number speaks for itself.
+            case .reset:
+                _ = announce(.usageReset)
+            }
+        }
+        usage.start()
+        scenes.start()
+
+        // An agent is installed and nothing is wired up: this is a first run, and the
+        // notch would otherwise sit empty with no explanation.
+        if EnvironmentScan.needsOnboarding() { showOnboarding() }
+
+        // Both re-checked at launch, neither blocking it.
+        updates.wantsBeta = activity.preferences.betaUpdates
+        Task { await license.refresh() }
+        Task { await updates.check() }
+
+        registerSwitcherShortcut()
+        let preferences = activity.preferences
+        notch.applyTuning(
+            width: preferences.notchWidthAdjustment,
+            height: preferences.notchHeightAdjustment)
+
+        let server = EventServer { [weak self] request in
+            await self?.handle(request) ?? PerchResponse()
+        }
+        do {
+            try server.start()
+            self.server = server
+        } catch {
+            NSLog("perch: could not start event server: \(error)")
+        }
+    }
+
+    func stop() {
+        // Unblock any session still waiting before the socket goes away.
+        permissions.resolveAllPending()
+        hotKey.unregister()
+        stopWatchingSwitcherKeys()
+        scenes.stop()
+        server?.stop()
+        server = nil
+    }
+
+    /// The one place that decides whether something takes the screen.
+    ///
+    /// Quiet is not "drop it": the request still queues, the session is still held, and
+    /// the notch still shows a dot. It just does not open itself while you are presenting.
+    private func announce(_ kind: InterruptionKind, client: ClientInfo? = nil) -> Interruption {
+        // Screen capture, Focus and the frontmost app have no notification, so they are
+        // read at the moment it matters rather than cached.
+        scenes.refresh()
+        let host = TerminalJump.bundleId(for: client)
+        let decision = InterruptionPolicy.decide(
+            kind, scene: scenes.scene, settings: quiet, host: host)
+        if decision == .full,
+            InterruptionPolicy.playsSound(kind, scene: scenes.scene, settings: quiet, host: host)
+        {
+            SoundPlayer.play(kind, settings: sounds)
+        }
+        return decision
+    }
+
+    /// The signal for when the notch cannot be one. Deliberately not gated on the same
+    /// decision as the panel: `announce` answers "should this take the screen", and the
+    /// answer is usually no for a completion — while "tell me it finished, I am in another
+    /// app" is exactly what people ask this app for.
+    private func notify(_ kind: SessionNotifier.Kind, for request: PerchRequest) {
+        let host = TerminalJump.bundleId(for: request.client)
+        guard
+            InterruptionPolicy.notifies(
+                kind == .failed ? .taskError : .taskComplete,
+                scene: scenes.scene, settings: quiet, host: host)
+        else { return }
+
+        // The session's own name, so a notification says which of six agents finished.
+        let session = request.payload.sessionId.flatMap { activity.sessions[$0] }
+        let title = session?.title ?? session?.projectName ?? t("Claude Code")
+        SessionNotifier.post(kind, title: title, client: request.client)
+    }
+
+    private func handle(_ request: PerchRequest) async -> PerchResponse {
+        guard request.event != Wire.statusEvent else {
+            return PerchResponse(status: statusReport())
+        }
+
+        if request.event == Wire.decideEvent {
+            return await decideFromCommandLine(request)
+        }
+
+        if request.event == Wire.usageEvent {
+            return recordRemoteUsage(request)
+        }
+
+        // One Claude Code event reaches Perch once per hook entry that matched it, so a
+        // machine with hooks in two scopes — a project install on top of a global one —
+        // would put every tool call on screen twice. The copy is still a blocked hook and
+        // still gets an answer; it just does not repeat what its twin already did.
+        let isEcho = request.duplicateKey.map { !echoes.admit($0) } ?? false
+
+        if !isEcho {
+            activity.record(request)
+            // The plan can only have moved during a turn, and a turn is bracketed by the
+            // hooks that just fired — so this is the whole refresh policy.
+            tasks.refresh(request.payload.sessionId)
+            tasks.forget(keeping: Set(activity.sessions.keys))
+            notch.flashActivity()
+
+            // A turn ending is the other thing worth a sound — and the one people most
+            // often want silent, which is why it is off by default.
+            //
+            // The decision was computed and thrown away here for months: `announce`
+            // returns `.full` exactly when "open the panel when a task finishes" is on,
+            // and nobody read it, so that setting only ever changed whether a sound
+            // played. Reading it is the whole feature.
+            switch request.event {
+            case "Stop":
+                if announce(.taskComplete, client: request.client) == .full { notch.reveal() }
+                notify(.finished, for: request)
+            case "StopFailure":
+                if announce(.taskError, client: request.client) == .full { notch.reveal() }
+                notify(.failed, for: request)
+            default: break
+            }
+            // Claude Code has just written to a transcript, so this is exactly when there
+            // is new usage to index — no polling needed.
+            usage.scheduleRefresh()
+        }
+
+        guard request.wantsDecision else { return PerchResponse() }
+
+        // For a decision, "already seen" is asked of the queue rather than of the clock:
+        // the card this copy will join is either still waiting or it is not, and a request
+        // that opens no card while its session stays blocked is the one failure here that
+        // would be invisible. Nothing suspends between this and the call below, so the
+        // answer cannot go stale.
+        if !permissions.hasPending(matching: request) {
+            // Sized from the incoming request: it is not queued yet, so
+            // `permissions.current` is still the previous one.
+            let requestKind = RequestKind.of(request)
+            let kind: InterruptionKind =
+                requestKind == .permission ? .approvalNeeded : .questionAsked
+            // Queue it either way — the session is blocked and the answer is still needed.
+            // Quiet only decides whether the panel opens by itself.
+            if announce(kind, client: request.client) == .full {
+                notch.showAlert(
+                    true, extraHeight: extraHeight(for: requestKind),
+                    extraWidth: extraWidth(for: requestKind))
+            } else {
+                notch.flashActivity()
+            }
+        }
+        var response = await permissions.request(request)
+        notch.showAlert(
+            permissions.current != nil, extraHeight: alertExtraHeight,
+            extraWidth: alertExtraWidth)
+
+        // Clients that cannot parse JSON get the finished stdout instead of the fields to
+        // assemble it. The remote hook is a shell script; this is what lets it stay one.
+        if request.rawOutput == true {
+            response.outputB64 = response.renderedOutputBase64(event: request.event)
+        }
+        return response
+    }
+
+    /// How much taller than a plain permission the current card needs to be.
+    private var alertExtraHeight: CGFloat {
+        permissions.current.map { extraHeight(for: $0.kind) } ?? 0
+    }
+
+    /// How much wider. Only a plan asks for it: a permission is one command and a question
+    /// is a list of short labels, and widening those would leave a card mostly empty.
+    private func extraWidth(for kind: RequestKind) -> CGFloat {
+        if case .plan = kind { return 140 }
+        return 0
+    }
+
+    private var alertExtraWidth: CGFloat {
+        permissions.current.map { extraWidth(for: $0.kind) } ?? 0
+    }
+
+    private func extraHeight(for kind: RequestKind) -> CGFloat {
+        switch kind {
+        case .question(let request):
+            // Room for the question, its options, and the controls under them.
+            let options = request.questions.map(\.options.count).max() ?? 2
+            return CGFloat(options) * 44 + 40
+        case .plan:
+            // A plan gets the screen. It is the longest thing Perch shows, the one with
+            // the most consequence behind the button, and it was being read through a
+            // 150pt slot — which is how a plan gets approved unread.
+            return 430
+        case .permission:
+            return 0
+        }
+    }
+
+    /// Approves the current request and, when asked, remembers the rule for this project.
+    func decide(_ decision: PermissionDecision, remember: Bool = false) {
+        guard let pending = permissions.current else { return }
+
+        // Claude Code persists the rule itself, through the decision it is already waiting
+        // on. Perch writing `settings.local.json` in parallel would race the very process
+        // about to rewrite it.
+        let rule = remember && decision == .allow
+            ? PermissionRule.remembered(for: pending.request)
+            : nil
+
+        permissions.resolve(pending, with: decision, rule: rule)
+        notch.showAlert(
+            permissions.current != nil, extraHeight: alertExtraHeight,
+            extraWidth: alertExtraWidth)
+    }
+
+    /// Answers the whole queue at once. Only worth offering when it is more than one.
+    func decideAll(_ decision: PermissionDecision) {
+        permissions.resolveAll(with: decision)
+        notch.showAlert(false)
+    }
+
+    /// Answers an `AskUserQuestion`: the answers ride back inside the tool's own input.
+    func answer(_ answers: [String: [String]]) {
+        guard let pending = permissions.current,
+            case .question(let request) = pending.kind
+        else { return }
+
+        let updated = request.updatedInput(
+            original: pending.request.payload.toolInput, answers: answers)
+        permissions.resolve(pending, with: .allow, updatedInput: updated)
+        notch.showAlert(
+            permissions.current != nil, extraHeight: alertExtraHeight,
+            extraWidth: alertExtraWidth)
+    }
+
+    /// Rejects a plan with what to change. Denying with a message is how feedback reaches
+    /// Claude Code — it reads the message and keeps going rather than stopping.
+    func rejectPlan(feedback: String) {
+        guard let pending = permissions.current else { return }
+        permissions.resolve(
+            pending, with: .deny,
+            reason: feedback.isEmpty ? "The plan was rejected in Perch." : feedback)
+        notch.showAlert(
+            permissions.current != nil, extraHeight: alertExtraHeight,
+            extraWidth: alertExtraWidth)
+    }
+
+    /// Backs `Perch --decide <allow|deny|ask> [--remember]`, which answers the oldest
+    /// pending request without touching the UI.
+    private func decideFromCommandLine(_ request: PerchRequest) async -> PerchResponse {
+        guard let raw = request.payload.message else {
+            return PerchResponse(status: "unknown decision")
+        }
+
+        if raw == "answer" {
+            return answerFromCommandLine(labels: request.payload.prompt ?? "")
+        }
+
+        // `Perch --settings` reaches the running instance rather than launching a second
+        // one, which would fight over the port and the notch.
+        // `Perch --update` — also how the update path gets exercised without clicking.
+        if raw == "update" {
+            guard updates.isConfigured else {
+                return PerchResponse(status: "no update feed configured")
+            }
+            let install = request.payload.prompt == "install"
+            Task {
+                await updates.check()
+                if install, let item = updates.available { await updates.install(item) }
+            }
+            return PerchResponse(
+                status: install ? "checking, then installing if newer" : "checking")
+        }
+
+        if raw == "diagnose" {
+            return PerchResponse(status: diagnosticReport())
+        }
+
+        // `Perch --quota` — reads the endpoint once, whatever the setting says, and
+        // reports what came back. This is how the credential path gets exercised without
+        // waiting for a five-minute timer, and how a refusal is diagnosed at all.
+        //
+        // Answered rather than fired off: the first read can put a Keychain dialog on
+        // screen, and "it is waiting for you" is the one thing worth saying at that point.
+        // The CLI's own deadline may pass first — the read still finishes, and
+        // `Perch --status` says what it found.
+        if raw == "quota" {
+            let summary = await usage.refreshDirect()
+            return PerchResponse(status: "direct quota: \(summary)")
+        }
+
+        if raw == "settings" {
+            let visible = showSettings()
+            return PerchResponse(
+                status: visible ? "settings window is on screen" : "settings window did not open")
+        }
+
+        guard let decision = PermissionDecision(rawValue: raw) else {
+            return PerchResponse(status: "unknown decision")
+        }
+        guard let pending = permissions.current else {
+            return PerchResponse(status: "nothing pending")
+        }
+
+        let remember = request.payload.prompt == "remember"
+        let summary = "\(pending.tool): \(pending.detail)"
+        decide(decision, remember: remember)
+        return PerchResponse(status: "\(decision.rawValue) → \(summary)")
+    }
+
+    /// `Perch --answer "Postgres"` — or `"Postgres | Auth, Billing"` for several
+    /// questions, in the order they were asked.
+    private func answerFromCommandLine(labels: String) -> PerchResponse {
+        guard let pending = permissions.current,
+            case .question(let request) = pending.kind
+        else {
+            return PerchResponse(status: "no question pending")
+        }
+
+        let perQuestion = labels.components(separatedBy: "|")
+        var answers: [String: [String]] = [:]
+        for (index, question) in request.questions.enumerated() {
+            let raw = index < perQuestion.count ? perQuestion[index] : ""
+            let chosen =
+                raw
+                .components(separatedBy: ",")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { label in question.options.contains { $0.label == label } }
+            if !chosen.isEmpty { answers[question.question] = chosen }
+        }
+
+        guard request.isComplete(answers) else {
+            return PerchResponse(status: "every question needs an answer that matches an option")
+        }
+
+        answer(answers)
+        return PerchResponse(status: "answered \(answers.count) question(s)")
+    }
+
+    /// A remote host reporting its own plan quota, relayed by its statusline bridge
+    /// through the tunnel the hooks already use.
+    private func recordRemoteUsage(_ request: PerchRequest) -> PerchResponse {
+        // The host names itself: only it knows which alias you gave it, and the socket
+        // cannot tell one tunnel from another.
+        let host = request.payload.cwd ?? "remote"
+        guard let raw = request.payload.message?.data(using: .utf8),
+            let limits = RateLimits.parse(raw)
+        else {
+            return PerchResponse(status: "could not read the quota payload")
+        }
+
+        usage.recordRemoteLimits(host: host, limits: limits)
+        return PerchResponse(status: "recorded quota for \(host)")
+    }
+
+    /// Everything a bug report needs and nothing it does not.
+    ///
+    /// Assembled from scrubbed facts rather than scrubbed afterwards: no command, no
+    /// prompt and no real project name ever enters it, so there is nothing to redact by
+    /// hand before pasting it somewhere public.
+    func diagnosticReport() -> String {
+        var report = DiagnosticReport()
+        let bundle = Bundle.main
+
+        report.lines.append("# Perch diagnostic report")
+        report.section("Perch")
+        report.field(
+            "version",
+            bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?")
+        report.field("licence", license.state.label)
+        report.field("running since", activity.startedAt.formatted(.iso8601))
+
+        report.section("System")
+        report.field("macOS", ProcessInfo.processInfo.operatingSystemVersionString)
+        report.field(
+            "memory", "\(ProcessInfo.processInfo.physicalMemory / 1_073_741_824) GB")
+        report.field("displays", "\(NSScreen.screens.count)")
+        report.field("notch", notch.geometry.hasNotch ? "yes" : "no (floating panel)")
+        report.field(
+            "size", "\(Int(notch.geometry.size.width))×\(Int(notch.geometry.size.height))")
+
+        report.section("Hooks")
+        let health = activity.health
+        report.field("sites checked", "\(health.sitesChecked)")
+        report.field("sites with hooks", "\(health.sitesWithHooks)")
+        // A project install layered on the global one: every event arrives twice, and the
+        // copies are dropped rather than shown. Worth stating in a bug report, because it
+        // explains a hook count that does not match what the panel displays.
+        report.field("sites installed twice", "\(health.duplicatedSites)")
+        report.field("sessions seen", "\(health.sessionsSeen)")
+        report.field("advice", "\(health.advice())")
+        for site in HookWatcher.sites() {
+            report.lines.append("  \(DiagnosticReport.scrub(site))")
+        }
+
+        report.section("Quota")
+        report.field("bridge", usage.bridgeLimits == nil ? "not connected" : "connected")
+        // `Perch --quota` reads regardless of the setting, so "off" alone would be a lie in
+        // a report written right after one — the last read is the fact, the setting is the
+        // context for it.
+        let directState: String =
+            switch (preferences.directQuota, usage.directSummary) {
+            case (true, let summary?): summary
+            case (true, nil): "on, not read yet"
+            case (false, let summary?): "off — last manual read: \(summary)"
+            case (false, nil): "off"
+            }
+        report.field("direct source", directState)
+        report.field(
+            "prices",
+            Pricing.refreshedAt.map { "refreshed \($0.formatted(.iso8601))" } ?? "as shipped")
+        for window in usage.limits?.limits.windows ?? [] {
+            report.field(
+                window.title, String(format: "%.0f%% used", window.window.utilization ?? 0))
+        }
+        report.field("remote hosts", "\(usage.remoteLimits.count)")
+
+        report.section("Sessions")
+        report.field("live", "\(activity.sessions.count)")
+        for session in activity.activeSessions {
+            // The project is hashed and the prompt is absent: a session line says what
+            // shape the problem is, not what you were working on.
+            let project = session.projectName.map(DiagnosticReport.anonymise) ?? "unknown"
+            report.lines.append(
+                "  \(project)  \(session.agent.displayName)  \(session.status.rawValue)"
+                    + "  \(session.client?.displayName ?? "?")"
+                    + "  subagents=\(session.subagents)")
+        }
+
+        report.section("Settings")
+        report.field("quiet scenes", "\(quiet)")
+        report.field("admission rules", "\(activity.admission.rules.filter(\.enabled).count) on")
+        report.field("sound", sounds.enabled ? "on" : "off")
+        report.field("switcher", preferences.switcherEnabled ? "on" : "off")
+
+        if let error = usage.indexError {
+            report.section("Errors")
+            report.lines.append(DiagnosticReport.scrub(error))
+        }
+
+        return report.text
+    }
+
+    /// Human-readable dump for `Perch --status`.
+    private func statusReport() -> String {
+        var lines: [String] = []
+        // The card's own size, not the state's: a plan is 430pt taller and 140pt wider
+        // than a permission, and `--diagnose` prints only the base sizes.
+        let grown =
+            notch.alertExtraHeight > 0 || notch.alertExtraWidth > 0
+            ? "  (+\(Int(notch.alertExtraWidth))w +\(Int(notch.alertExtraHeight))h)" : ""
+        lines.append("state          \(notch.state)\(grown)")
+        lines.append("pending        \(permissions.waitingCount)")
+        for pending in permissions.queue {
+            let rule = PermissionRule.rule(for: pending.request) ?? "-"
+            lines.append("  \(pending.tool)  \(pending.detail.prefix(50))  [rule: \(rule)]")
+        }
+        lines.append("sessions       \(activity.sessions.count) (\(activity.workingSessionCount) working)")
+        for session in activity.activeSessions {
+            let project = session.projectName ?? "?"
+            // Named rather than counted: "+2 subagents" and "+2 (code-reviewer, explorer)"
+            // answer different questions, and only one of them is worth printing.
+            let subagents =
+                session.children.isEmpty
+                ? ""
+                : "  +\(session.children.count) ("
+                    + session.children.map(\.label).joined(separator: ", ") + ")"
+            let jump = TerminalJump.plan(for: session.client).summary
+            let mode = session.permissionMode.map { " {\($0)}" } ?? " {no permission_mode}"
+            let board = tasks.board(for: session.id)
+            let plan =
+                board.isEmpty
+                ? ""
+                : "  · tasks \(board.completed)/\(board.tasks.count) done, \(board.inProgress) running"
+            lines.append(
+                "  \(session.id.prefix(8))  \(session.agent.displayName)\(mode)  \(project)  [\(session.status.rawValue)]  “\(session.title)”  \(session.lastDetail)\(subagents)\(plan)  · \(jump)"
+            )
+        }
+        usage.reloadLimits()
+        if let reading = usage.limits, !reading.limits.isEmpty {
+            lines.append("quota")
+            for window in reading.limits.windows {
+                let used = window.window.utilization.map { String(format: "%.0f%%", $0) } ?? "?"
+                let resets = window.window.resetsAt.map {
+                    " · resets \($0.formatted(.relative(presentation: .named)))"
+                } ?? ""
+                lines.append("  \(window.title.padding(toLength: 16, withPad: " ", startingAt: 0)) \(used) used\(resets)")
+            }
+        } else if usage.limits?.limits.available == false {
+            lines.append("quota          not applicable on this account")
+        } else {
+            lines.append("quota          no data — run ./scripts/usage-bridge.sh")
+        }
+        if let summary = usage.directSummary {
+            lines.append("quota direct   \(summary)")
+        }
+        for (host, reading) in usage.remoteLimits.sorted(by: { $0.key < $1.key }) {
+            lines.append("quota @\(host)")
+            for window in reading.limits.windows {
+                let used = window.window.utilization.map { String(format: "%.0f%%", $0) } ?? "?"
+                lines.append(
+                    "  \(window.title.padding(toLength: 16, withPad: " ", startingAt: 0)) \(used) used"
+                )
+            }
+        }
+        lines.append(
+            "tokens today   \(usage.today.totalTokens.compactTokens) (\(usage.today.cost.compactCost))"
+        )
+        lines.append(
+            "tokens total   \(usage.allTime.totalTokens.compactTokens) (\(usage.allTime.cost.compactCost)), \(usage.allTime.events) responses"
+        )
+        if let error = usage.indexError { lines.append("index error    \(error)") }
+        lines.append("events         \(activity.events.count)")
+        let formatter = Date.FormatStyle(date: .omitted, time: .standard)
+        for event in activity.events.prefix(15) {
+            let time = event.date.formatted(formatter)
+            let tool = (event.tool ?? event.kind).padding(toLength: 16, withPad: " ", startingAt: 0)
+            let mark =
+                switch event.status {
+                case .running: "…"
+                case .done: "✓"
+                case .failed: "✗"
+                }
+            lines.append("  \(time)  \(mark) \(tool)  \(event.detail.prefix(60))")
+        }
+        return lines.joined(separator: "\n")
+    }
+}

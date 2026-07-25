@@ -1,0 +1,188 @@
+/* Perch — français.
+
+   Les clés sont le texte anglais : une traduction manquante retombe donc sur quelque
+   chose de lisible plutôt que sur un identifiant. */
+
+/* Panneau */
+"Perch" = "Perch";
+"%lld sessions" = "%lld sessions";
+"1 session" = "1 session";
+"waiting for Claude Code" = "en attente de Claude Code";
+"activity" = "activité";
+"stats" = "stats";
+"rank" = "classement";
+"recent" = "récent";
+"Settings" = "Réglages";
+"Close (esc)" = "Fermer (échap)";
+"No activity yet" = "Aucune activité";
+"Install the hooks, then restart your Claude Code sessions." = "Installe les hooks, puis redémarre tes sessions Claude Code.";
+"Hooks are installed twice" = "Hooks installés en double";
+"%lld projects install Perch on top of the global hooks, so every event fires twice. The copies are dropped, but the second hook still runs: ./scripts/install-hooks.sh --uninstall <project>." = "%lld projets installent Perch par-dessus les hooks globaux : chaque événement part deux fois. Les copies sont ignorées, mais le second hook s'exécute quand même — ./scripts/install-hooks.sh --uninstall <projet>.";
+"Leaderboard" = "Classement";
+"Opt in to compare your usage with other developers." = "Active-le pour comparer ton usage à celui d'autres développeurs.";
+
+/* Cartes de session */
+"session" = "session";
+"You: %@" = "Vous : %@";
+"Compacting context…" = "Compactage du contexte…";
+"Waiting for you" = "En attente de vous";
+"Waiting for your approval" = "Attend ton approbation";
+"Waiting for your answer" = "Attend ta réponse";
+"Waiting for your input" = "Attend ta saisie";
+"Ended on a failure" = "Terminé en échec";
+"%lld agents" = "%lld agents";
+"Hide sessions in %@" = "Masquer les sessions dans %@";
+"Silence prompts starting with “%@…”" = "Faire taire les prompts commençant par « %@… »";
+
+/* Saut */
+"Jump to iTerm" = "Aller dans iTerm";
+"Jump to Terminal" = "Aller dans Terminal";
+"Open %@" = "Ouvrir %@";
+"No terminal recorded" = "Aucun terminal enregistré";
+
+/* Quotas */
+"Plan" = "Forfait";
+"5h session" = "session 5 h";
+"7d all models" = "7 j tous modèles";
+"7d Opus" = "7 j Opus";
+"7d Sonnet" = "7 j Sonnet";
+"No plan limits on this account — API key, Bedrock or Vertex." = "Aucune limite de forfait sur ce compte — clé API, Bedrock ou Vertex.";
+"Not connected. Run ./scripts/usage-bridge.sh, then restart your sessions." = "Non connecté. Lance ./scripts/usage-bridge.sh, puis redémarre tes sessions.";
+
+/* Jetons */
+"Tokens" = "Jetons";
+"indexing…" = "indexation…";
+"today" = "aujourd'hui";
+"all time" = "total";
+"cache read" = "lecture cache";
+"No usage indexed yet." = "Aucun usage indexé pour l'instant.";
+
+/* Carte de permission */
+"Allow" = "Autoriser";
+"Always" = "Toujours";
+"Deny" = "Refuser";
+"%lld waiting" = "%lld en attente";
+
+/* Questions et plans */
+"Question" = "Question";
+"multi" = "multi";
+"%lld of %lld" = "%lld sur %lld";
+"Back" = "Précédent";
+"Next" = "Suivant";
+"Submit" = "Valider";
+"Submit all" = "Tout valider";
+"Answer in terminal" = "Répondre dans le terminal";
+"Approve" = "Approuver";
+"Reject" = "Rejeter";
+"Send feedback" = "Envoyer le retour";
+"Tell Claude what to change…" = "Dis à Claude quoi changer…";
+
+/* Réglages — volets */
+"General" = "Général";
+"Filters" = "Filtres";
+"Integrations" = "Intégrations";
+"About" = "À propos";
+
+/* Réglages — général */
+"Quiet scenes" = "Moments de silence";
+"Perch stays silent while any of these is true — no panel, no sound, approvals included. Requests still queue and the session is still held; a dot marks them." = "Perch se tait dès que l'une de ces conditions est vraie — pas de panneau, pas de son, approbations comprises. Les demandes restent en file, la session reste tenue, et un point les signale.";
+"A Focus mode is on" = "Un mode Concentration est actif";
+"The screen is locked or asleep" = "L'écran est verrouillé ou en veille";
+"The screen is being recorded or shared" = "L'écran est enregistré ou partagé";
+"Quiet hours" = "Heures calmes";
+"Crosses midnight when the end is earlier than the start." = "Traverse minuit quand la fin précède le début.";
+"Silence during a time range" = "Faire silence sur une plage horaire";
+"From" = "De";
+"Until" = "À";
+"crosses midnight" = "traverse minuit";
+"Switcher" = "Sélecteur";
+"Tap to open and pick with ↑↓, or hold and press again to cycle." = "Appuie pour ouvrir et choisir aux flèches, ou maintiens et réappuie pour faire défiler.";
+"Enable the global shortcut" = "Activer le raccourci global";
+"Shortcut" = "Raccourci";
+"Press a shortcut…" = "Appuie sur un raccourci…";
+"Needs ⌃, ⌥ or ⌘" = "Il faut ⌃, ⌥ ou ⌘";
+"Notch" = "Encoche";
+"Reset to what macOS reports" = "Revenir à ce que macOS annonce";
+"Idle sessions" = "Sessions inactives";
+"Forget a silent session after" = "Oublier une session silencieuse après";
+"Never" = "Jamais";
+"30 minutes" = "30 minutes";
+"1 hour" = "1 heure";
+"2 hours" = "2 heures";
+"8 hours" = "8 heures";
+"24 hours" = "24 heures";
+"Notifications" = "Notifications";
+"Stay quiet when the asking terminal is already in front" = "Rester silencieux quand le terminal qui demande est déjà au premier plan";
+"Play sounds" = "Jouer les sons";
+"Open the panel when a task finishes" = "Ouvrir le panneau à la fin d'une tâche";
+
+/* Réglages — filtres */
+"Presets" = "Préréglages";
+"Your filters" = "Tes filtres";
+"Right-clicking a session card adds one too." = "Un clic droit sur une carte en ajoute un aussi.";
+"Directory" = "Répertoire";
+"Prompt" = "Prompt";
+"contains" = "contient";
+"starts with" = "commence par";
+"pattern" = "motif";
+"Add" = "Ajouter";
+"Remove" = "Supprimer";
+"No filters of your own yet." = "Aucun filtre à toi pour l'instant.";
+"Blocked launcher apps" = "Apps lanceuses bloquées";
+"Choose App…" = "Choisir une app…";
+"Block" = "Bloquer";
+"Unblock" = "Débloquer";
+"Nothing blocked." = "Rien de bloqué.";
+
+/* Réglages — intégrations */
+"Hooks" = "Hooks";
+"Claude Code (global)" = "Claude Code (global)";
+"Codex" = "Codex";
+"not installed" = "non installé";
+"%lld events" = "%lld events";
+"%lld projects also install Perch on top of the global hooks. Every event fires twice; Perch shows it once. Remove the project copy with ./scripts/install-hooks.sh --uninstall <project>." = "%lld projets installent aussi Perch par-dessus les hooks globaux. Chaque événement part deux fois ; Perch ne l'affiche qu'une. Retire la copie du projet avec ./scripts/install-hooks.sh --uninstall <projet>.";
+"Plan quota" = "Quota du forfait";
+"Connected" = "Connecté";
+"Connection" = "Connexion";
+"Statusline bridge connected" = "Pont statusline connecté";
+"Tell me when a window fills up" = "Me prévenir quand une fenêtre se remplit";
+"The notch shows itself once, when a window crosses that line — and stays quiet during a screen share like everything else." = "L'encoche se montre une fois, quand une fenêtre franchit ce seuil — et reste muette pendant un partage d'écran, comme le reste.";
+"Show what is left rather than what is used" = "Afficher ce qui reste plutôt que ce qui est consommé";
+"Also read the quota from Anthropic directly" = "Lire aussi le quota directement chez Anthropic";
+"Uses the Claude Code credential already in your Keychain — macOS asks once. The token is read for each request and dropped: never stored, never logged, never sent anywhere but api.anthropic.com. Useful when your statusline is off, because that is the only thing that publishes the quota locally." = "Utilise l'identifiant Claude Code déjà présent dans ton trousseau — macOS demande une fois. Le jeton est lu à chaque requête puis abandonné : jamais stocké, jamais journalisé, jamais envoyé ailleurs qu'à api.anthropic.com. Utile quand ta statusline est désactivée, puisque c'est la seule chose qui publie le quota en local.";
+"used" = "consommé";
+"left" = "restant";
+"Show what is used instead" = "Afficher plutôt ce qui est consommé";
+"Codex trust" = "Confiance Codex";
+"Run /hooks in Codex and approve the Perch entries." = "Lance /hooks dans Codex et approuve les entrées Perch.";
+
+/* Task board */
+"Tasks (%@)" = "Tâches (%@)";
+"%lld done" = "%lld terminées";
+"%lld running" = "%lld en cours";
+"%lld open" = "%lld ouvertes";
+"… +%lld done" = "… +%lld terminées";
+"… +%lld more" = "… +%lld autres";
+
+/* Sound */
+"Mute sounds" = "Couper le son";
+"Unmute sounds" = "Rétablir le son";
+
+/* Densité du panneau */
+"Panel" = "Panneau";
+"Density" = "Densité";
+"Clean" = "Épuré";
+"Detailed" = "Détaillé";
+"Clean keeps one line of chrome per session, so six agents still fit on screen. Detailed adds what you asked and the plan it is working through." = "Épuré garde une ligne par session, pour que six agents tiennent encore à l'écran. Détaillé ajoute ce que vous avez demandé et le plan en cours.";
+
+/* Menu, notifications */
+"Settings…" = "Réglages…";
+"Check for Updates…" = "Rechercher des mises à jour…";
+"Mute sounds" = "Couper le son";
+"Unmute sounds" = "Rétablir le son";
+"Quit Perch" = "Quitter Perch";
+"Turn finished" = "Tour terminé";
+"Turn ended on a failure" = "Tour terminé en échec";
+"Claude Code" = "Claude Code";
+"Notify me when a turn ends somewhere I cannot see" = "Me prévenir quand un tour se termine hors de ma vue";
+"A macOS notification, silent — Perch already owns the sound. It stays quiet in a quiet scene, during quiet hours, and while you are looking at the terminal that raised it. Clicking it jumps there." = "Une notification macOS, muette — le son reste géré par Perch. Elle se tait pendant une scène silencieuse, pendant les heures calmes, et tant que tu regardes le terminal concerné. Un clic t'y emmène.";
