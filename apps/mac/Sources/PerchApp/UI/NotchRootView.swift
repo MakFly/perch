@@ -383,12 +383,18 @@ struct IdleView: View {
         HStack(spacing: 0) {
             HStack(spacing: 6) {
                 Spacer(minLength: 0)
-                UsageLimitsStrip(reading: quota)
+                // Numbers are what you go looking for; the creatures are what you glance
+                // at. So the quota rides in with the cursor, beside the controls.
+                if showsIcons {
+                    UsageLimitsStrip(reading: quota)
+                }
                 HStack(spacing: 3) {
-                    // A glyph breathes only for an agent that is doing something: a card
-                    // that has stopped should not keep pulsing from the corner of a screen.
+                    // A sprite plays only for an agent that is doing something: a session
+                    // that has stopped holds still, and dims, from the corner of a screen.
                     ForEach(reading.agents, id: \.agent.rawValue) { entry in
-                        AgentGlyph(agent: entry.agent, pixel: 2, isBreathing: entry.isWorking)
+                        AgentGlyph(
+                            agent: entry.agent, pixel: IdleView.glyphPixel,
+                            isBreathing: entry.isWorking)
                     }
                 }
             }
@@ -417,7 +423,9 @@ struct IdleView: View {
                 // Anything the server adds beyond the two everyone has — a per-model
                 // weekly window — goes on this side, where there is room the left has run
                 // out of.
-                UsageLimitsStrip(reading: quota, dropFirst: 2, maximum: 1)
+                if showsIcons {
+                    UsageLimitsStrip(reading: quota, dropFirst: 2, maximum: 1)
+                }
                 if count > 0 {
                     // A pill, not a bare digit: against the menu bar a lone numeral reads
                     // as a glitch, and the fill is what makes it look deliberate.
@@ -470,6 +478,10 @@ struct IdleView: View {
     static let iconSpacing = IdleStrip.iconSpacing
     static var iconsWidth: CGFloat { IdleStrip.iconsWidth }
 
+    /// How big a sprite the resting strip carries. Two thirds of the 32pt band: at 20pt a
+    /// creature reads as a mark, and at 24 it reads as itself.
+    static let glyphPixel: CGFloat = 2.4
+
     /// Sized to the content: one agent must not reserve room for four, and an empty strip
     /// must be exactly zero wide or it paints black shoulders beside the notch.
     ///
@@ -480,21 +492,28 @@ struct IdleView: View {
         for reading: IdleReading, quota: UsageLimitsReader.Reading? = nil, waiting: Int = 0,
         showsControls: Bool = false
     ) -> CGFloat {
-        // The two windows every account has go left of the cutout; anything per-model goes
-        // right of it. Each side is measured from what it actually draws.
-        let leftQuota = quotaWidth(quota, dropFirst: 0, maximum: 2)
-        let rightQuota = quotaWidth(quota, dropFirst: 2, maximum: 1)
-        guard reading.count > 0 || leftQuota + rightQuota > 0 else { return 0 }
+        // Nothing running is nothing drawn, whatever else Perch knows.
+        //
+        // The quota used to be able to open the strip on its own, which meant a machine
+        // with no session at all still had two black shoulders beside the cutout — and the
+        // whole point of this state is that a Mac doing nothing looks like a Mac doing
+        // nothing. The number is one hover away, and in the panel's header on every tab.
+        guard reading.count > 0 else { return 0 }
 
-        // 16pt of sprite plus a 3pt gap, and a floor of 24 for the count pill — wide
-        // enough for two digits, which is more concurrent sessions than anyone runs.
-        let glyphs = reading.count == 0 ? 0 : max(CGFloat(reading.agents.count) * 19, 24)
-        let left = leftQuota + (leftQuota > 0 && glyphs > 0 ? 6 : 0) + glyphs
-        var right = rightQuota + (reading.count > 0 ? 24 : 0) + (waiting > 0 ? 26 : 0)
-        // The icons are only drawn when there is a strip to draw them on — which is
-        // exactly when this function returns something other than zero — and only while
-        // the cursor is close enough to be reaching for them.
-        if showsControls { right += iconsWidth + iconSpacing }
+        // A sprite plus its 3pt gap, with a floor of 24 for the count pill — wide enough
+        // for two digits, which is more concurrent sessions than anyone runs.
+        var left = max(CGFloat(reading.agents.count) * AgentGlyph.width(pixel: glyphPixel), 24)
+        var right: CGFloat = 24 + (waiting > 0 ? 26 : 0)
+
+        // The numbers and the two controls ride in together, and only while the cursor is
+        // close enough to be reaching for them.
+        if showsControls {
+            // The two windows every account has go left of the cutout; anything per-model
+            // goes right of it. Each side is measured from what it actually draws.
+            let leftQuota = quotaWidth(quota, dropFirst: 0, maximum: 2)
+            left += leftQuota + (leftQuota > 0 ? 6 : 0)
+            right += quotaWidth(quota, dropFirst: 2, maximum: 1) + iconsWidth + iconSpacing
+        }
 
         // Both shoulders are one number — the window is symmetric around the cutout — so
         // the wider side decides. An asymmetric window would centre the notch off the

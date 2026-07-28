@@ -61,9 +61,16 @@ Perch has no Dock icon and no menu bar item. Hover the notch for a summary, clic
 panel, `esc` or move away to dismiss. **Right-click** for Settings, Updates, Mute and Quit.
 
 At rest the notch shows a sprite per running agent and a live session count — live, not busy,
-because a CLI waiting on you is the one worth seeing. The pill turns amber when one is blocked.
-Mute and Settings appear on the strip as your cursor comes near, and give the menu bar back
-when it leaves.
+because a CLI waiting on you is the one worth seeing. The pill turns amber when one is blocked,
+and the sprite animates only while that agent is working. Quota, Mute and Settings appear on the
+strip as your cursor comes near, and give the menu bar back when it leaves. With nothing running
+the strip is exactly zero wide: a Mac doing nothing looks like a Mac doing nothing.
+
+Sprites are optional by construction. `AgentGlyph` draws its own 10×10 pixel art — a fire
+lizard, a shelled swimmer, a seed-carrier, owing nobody anything — and that is what the
+repository ships. Drop `agent-claude.png`, `agent-codex.png` or `agent-gemini.png` into
+`apps/mac/Resources/Sprites/` and it plays those instead: one row of square frames, so the
+frame count is the width divided by the height, at 10 frames a second.
 
 A turn ending flashes one line beside the cutout for two seconds and takes it back on its own —
 which session, and what it was doing. A session that ended badly and a quota window crossing

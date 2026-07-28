@@ -1,5 +1,11 @@
 .DS_Store
 
+# Agent sprites. Optional by construction — with this directory absent the app draws its
+# own pixel art — and kept out of the repository because what is in it is not ours to
+# redistribute. `AgentGlyph.sheet(for:)` looks for `agent-<name>.png`, a row of square
+# frames; the frame count is the width divided by the height.
+apps/mac/Resources/Sprites/
+
 # Swift
 apps/mac/.build/
 dist/

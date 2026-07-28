@@ -102,49 +102,52 @@ struct AgentGlyph: View {
         }
     }
 
-    /// The bundled sprite for this agent, if one shipped.
+    /// The bundled sprite sheet for this agent, if one shipped.
     ///
-    /// Loaded per agent and cached for the process: a glyph is drawn once per session card
-    /// per redraw, and reading a PNG off disk on that path would be absurd.
-    private static var sprites: [Agent: NSImage] = [:]
+    /// Cut apart once and cached for the process, misses included: a glyph is drawn on
+    /// every redraw of a panel that redraws on every hook event, and neither reading a PNG
+    /// off disk nor failing to find one belongs on that path.
+    private static var sheets: [Agent: SpriteSheet?] = [:]
 
-    private static func sprite(for agent: Agent) -> NSImage? {
-        if let cached = sprites[agent] { return cached }
+    static func sheet(for agent: Agent) -> SpriteSheet? {
+        if let cached = sheets[agent] { return cached }
         let names: [Agent: String] = [
             .claude: "agent-claude", .codex: "agent-codex", .gemini: "agent-gemini",
         ]
-        guard let name = names[agent],
-            let url = Bundle.main.url(
-                forResource: name, withExtension: "png", subdirectory: "Sprites"),
-            let image = NSImage(contentsOf: url)
-        else { return nil }
-        sprites[agent] = image
-        return image
+        let loaded = names[agent]
+            .flatMap {
+                Bundle.main.url(forResource: $0, withExtension: "png", subdirectory: "Sprites")
+            }
+            .flatMap(SpriteSheet.load)
+        sheets[agent] = loaded
+        return loaded
     }
 
     /// The box a glyph occupies, whichever way it is drawn — ten pixels of the grid, or
-    /// the sprite scaled to the same square, so a row of them lines up either way.
-    private var side: CGFloat { pixel * 10 }
+    /// a sheet frame scaled to the same square, so a row of them lines up either way.
+    var side: CGFloat { pixel * 10 }
+
+    /// What one costs on the resting strip, gap included.
+    static func width(pixel: CGFloat = 2.4) -> CGFloat { pixel * 10 + 3 }
 
     var body: some View {
         Group {
-            if let sprite = Self.sprite(for: agent) {
-                Image(nsImage: sprite)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: side, height: side)
+            if let sheet = Self.sheet(for: agent) {
+                // The animation *is* the breathing here. Pulsing the opacity of something
+                // that already moves reads as a display fault rather than as a heartbeat.
+                AnimatedSprite(sheet: sheet, side: side, isPlaying: isBreathing)
             } else {
                 drawn
+                    .opacity(isBreathing && phase ? 0.5 : 1)
+                    .animation(
+                        isBreathing
+                            ? .easeInOut(duration: 1.1).repeatForever(autoreverses: true)
+                            : .default,
+                        value: phase
+                    )
+                    .onAppear { phase = true }
             }
         }
-        .opacity(isBreathing && phase ? 0.5 : 1)
-        .animation(
-            isBreathing
-                ? .easeInOut(duration: 1.1).repeatForever(autoreverses: true)
-                : .default,
-            value: phase
-        )
-        .onAppear { phase = true }
         .help(agent.displayName)
     }
 
