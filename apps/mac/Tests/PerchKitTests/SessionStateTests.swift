@@ -271,7 +271,7 @@ private let epoch = Date(timeIntervalSince1970: 1_700_000_000)
     tracker.record(id: "third", kind: "SessionStart", at: epoch.addingTimeInterval(120))
 
     let order = tracker.active.map(\.id)
-    #expect(order == ["third", "second", "first"])
+    #expect(order == ["first", "second", "third"])
 
     // The oldest session does something. It stays exactly where it was.
     tracker.record(id: "first", kind: "PreToolUse", at: epoch.addingTimeInterval(300))
@@ -293,4 +293,38 @@ private let epoch = Date(timeIntervalSince1970: 1_700_000_000)
     for _ in 0..<20 {
         #expect(tracker.active.map(\.id) == order)
     }
+}
+
+/// A list that loses a row while it is being read is worse than one a few seconds out of
+/// date: everything below the gap jumps up, and the card you were reading is now a
+/// different card.
+@Test func nothingLeavesTheListWhileSomeoneIsReadingIt() {
+    var tracker = SessionTracker()
+    tracker.timeout = 60
+    tracker.record(id: "a", kind: "SessionStart", at: epoch)
+    tracker.record(id: "b", kind: "SessionStart", at: epoch)
+    tracker.record(id: "c", kind: "SessionStart", at: epoch)
+
+    tracker.hold()
+    tracker.record(id: "b", kind: "SessionEnd", at: epoch.addingTimeInterval(10))
+    // And one that simply went quiet for longer than the timeout.
+    tracker.record(id: "c", kind: "PreToolUse", at: epoch.addingTimeInterval(600))
+
+    #expect(tracker.active.map(\.id) == ["a", "b", "c"])
+
+    // Look away and everything that was withheld happens at once: `b` ended, and `a` has
+    // now been silent for ten minutes.
+    tracker.release(now: epoch.addingTimeInterval(600))
+    #expect(tracker.active.map(\.id) == ["c"])
+}
+
+/// A session starting appends. It must not push the list someone is reading downward.
+@Test func aNewSessionArrivesAtTheEnd() {
+    var tracker = SessionTracker()
+    tracker.record(id: "first", kind: "SessionStart", at: epoch)
+    tracker.record(id: "second", kind: "SessionStart", at: epoch.addingTimeInterval(60))
+    #expect(tracker.active.map(\.id) == ["first", "second"])
+
+    tracker.record(id: "third", kind: "SessionStart", at: epoch.addingTimeInterval(120))
+    #expect(tracker.active.map(\.id) == ["first", "second", "third"])
 }

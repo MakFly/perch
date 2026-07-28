@@ -202,6 +202,7 @@ final class AppModel {
         // see it. Closed, this costs nothing at all.
         notch.onPanelVisibilityChanged = { [weak self] isVisible in
             guard let self else { return }
+            activity.holdSteady(isVisible)
             if isVisible {
                 transcripts.start { [weak self] in await self?.refreshTranscripts() }
             } else {

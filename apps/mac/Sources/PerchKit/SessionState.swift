@@ -209,7 +209,7 @@ public struct SessionTracker: Sendable {
         at date: Date = .now
     ) {
         if kind == "SessionEnd" {
-            sessions.removeValue(forKey: id)
+            remove(id: id)
             return
         }
 
@@ -320,15 +320,49 @@ public struct SessionTracker: Sendable {
     }
 
     public mutating func drop(id: String) {
-        sessions.removeValue(forKey: id)
+        remove(id: id)
     }
 
     public mutating func prune(now: Date = .now) {
         // Zero means never. Claude Code always sends `SessionEnd`, so a user who only runs
         // it can turn ageing off entirely and never lose a long-running session.
-        guard timeout > 0 else { return }
+        guard !holdsSteady, timeout > 0 else { return }
         let cutoff = now.addingTimeInterval(-timeout)
         sessions = sessions.filter { $0.value.lastEvent > cutoff }
+    }
+
+    // MARK: - Holding still
+
+    /// True while someone is looking at the panel.
+    ///
+    /// A list that removes a row while it is being read is worse than one that is a few
+    /// seconds out of date: everything below the gap jumps up, and the card you were
+    /// reading is now a different card. So while the panel is open nothing leaves the
+    /// list — a session that ends keeps its row, marked as ended, until you look away.
+    ///
+    /// Only the roster is held. What each row *says* stays live, which is the entire
+    /// reason to have the panel open.
+    public private(set) var holdsSteady = false
+
+    /// Removals that arrived while the list was held.
+    private var withheld: Set<String> = []
+
+    public mutating func hold() { holdsSteady = true }
+
+    /// Lets go, and applies everything that was withheld.
+    public mutating func release(now: Date = .now) {
+        holdsSteady = false
+        for id in withheld { sessions.removeValue(forKey: id) }
+        withheld = []
+        prune(now: now)
+    }
+
+    private mutating func remove(id: String) {
+        guard holdsSteady else {
+            sessions.removeValue(forKey: id)
+            return
+        }
+        withheld.insert(id)
     }
 
     /// Every live session, in an order that does not move.
@@ -341,15 +375,19 @@ public struct SessionTracker: Sendable {
     /// cycles in a different order on every press because the switcher indexes into this
     /// array.
     ///
-    /// A session's start time never changes, so this order never changes. A card appears
-    /// at the top when its session starts and keeps its place until it ends. Which one is
-    /// busy, and which one wants you, is the dot's job — not the row's.
+    /// A session's start time never changes, so this order never changes — and it is the
+    /// order they arrived in, oldest first, so a session starting *appends* rather than
+    /// inserting. Newest-first was the first attempt and it moves the whole list down by a
+    /// card every time you open a terminal.
+    ///
+    /// Which one is busy, and which one wants you, is the dot's job — it was never the
+    /// row's.
     ///
     /// The id breaks ties: two sessions started in the same instant would otherwise be
     /// ordered by whatever the dictionary felt like, which is the same bug in miniature.
     public var active: [SessionSnapshot] {
         sessions.values.sorted {
-            ($0.startedAt, $0.id) > ($1.startedAt, $1.id)
+            ($0.startedAt, $0.id) < ($1.startedAt, $1.id)
         }
     }
 

@@ -157,6 +157,20 @@ final class ActivityStore {
 
     var activeSessions: [SessionSnapshot] { tracker.active }
 
+    /// Holds the roster still while someone is reading it, and lets go afterwards.
+    ///
+    /// Called from the panel's own visibility, so "while someone is reading it" is exactly
+    /// what it means: the set of cards cannot change under the cursor, and everything that
+    /// wanted to leave — a session that ended, one that aged out, one a new rule silenced —
+    /// leaves the moment you look away.
+    func holdSteady(_ isReading: Bool) {
+        if isReading {
+            tracker.hold()
+        } else {
+            tracker.release()
+        }
+    }
+
     var workingSessionCount: Int { tracker.workingCount }
 
     var subagentCount: Int { tracker.subagentCount }
