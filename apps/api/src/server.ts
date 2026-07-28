@@ -11,7 +11,7 @@
  * looks like "something else is on 8787" and is not.
  */
 
-import { createApp } from "./app.js";
+import { createApp } from "./routes.js";
 import { makeRepo, VERSION } from "./index.js";
 
 const port = Number(process.env.PORT ?? 8787);

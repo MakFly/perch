@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { createApp } from "../src/app.js";
+import { createApp } from "../src/routes.js";
 import { DemoRepo } from "../src/repo/demo.js";
 
 const app = createApp({ repo: new DemoRepo(new Date("2026-07-28T09:00:00Z")), version: "test" });

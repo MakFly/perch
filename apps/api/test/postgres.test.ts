@@ -13,7 +13,7 @@
 
 import { afterAll, describe, expect, test } from "bun:test";
 
-import { createApp } from "../src/app.js";
+import { createApp } from "../src/routes.js";
 import { resolvePeriod, toISODate } from "../src/period.js";
 import { PostgresRepo } from "../src/repo/postgres.js";
 

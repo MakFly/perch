@@ -1,4 +1,4 @@
-import { createApp } from "./app.js";
+import { createApp } from "./routes.js";
 import { DemoRepo } from "./repo/demo.js";
 import { PostgresRepo } from "./repo/postgres.js";
 import type { LeaderboardRepo } from "./types.js";
@@ -35,6 +35,6 @@ const app = createApp({ repo: makeRepo(), version: VERSION });
 
 export default app;
 
-export { createApp } from "./app.js";
+export { createApp } from "./routes.js";
 export { DemoRepo } from "./repo/demo.js";
 export { PostgresRepo } from "./repo/postgres.js";
