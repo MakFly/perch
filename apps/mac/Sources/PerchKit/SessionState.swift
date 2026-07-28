@@ -100,6 +100,12 @@ public struct SessionSnapshot: Sendable, Equatable {
     public var agent: Agent = .claude
     /// The name Claude Code gave this session, read from its own transcript.
     public var aiTitle: String?
+    /// Where that transcript is, so the last turn can be re-read while the session runs
+    /// rather than only when a hook happens to fire.
+    public var transcriptPath: String?
+    /// The last exchange: what was asked, and what came back. `nil` until a transcript has
+    /// been read — a card without it is the card Perch shipped before, not a broken one.
+    public var turn: TranscriptTurn?
     /// The session's permission mode, as Claude Code reports it on every hook.
     public var permissionMode: String?
 
@@ -170,6 +176,14 @@ public struct SessionTracker: Sendable {
         self.timeout = timeout
     }
 
+    /// Attaches a freshly read turn. Silent when the session is gone: the read that
+    /// produced it started while it was still on screen.
+    public mutating func setTurn(_ turn: TranscriptTurn, for id: String) {
+        guard var session = sessions[id] else { return }
+        session.turn = turn
+        sessions[id] = session
+    }
+
     public mutating func record(
         id: String,
         kind: String,
@@ -179,6 +193,8 @@ public struct SessionTracker: Sendable {
         client: ClientInfo? = nil,
         agent: Agent? = nil,
         aiTitle: String? = nil,
+        transcriptPath: String? = nil,
+        turn: TranscriptTurn? = nil,
         permissionMode: String? = nil,
         /// The tool the event is about. `PermissionRequest` carries `AskUserQuestion` or
         /// `ExitPlanMode` when what is waiting is an answer rather than a decision, and
@@ -215,6 +231,10 @@ public struct SessionTracker: Sendable {
         if let agent { session.agent = agent }
         // The title is refined as the session goes, so a later one replaces an earlier.
         if let aiTitle, !aiTitle.isEmpty { session.aiTitle = aiTitle }
+        if let transcriptPath, !transcriptPath.isEmpty { session.transcriptPath = transcriptPath }
+        // A turn is only ever replaced by a newer reading of the same file, never blanked:
+        // a hook that fires between two reads would otherwise clear the panel for a frame.
+        if let turn { session.turn = turn }
         // Toggled mid-session with shift+tab, so the latest event is the truth.
         if let permissionMode, !permissionMode.isEmpty { session.permissionMode = permissionMode }
 

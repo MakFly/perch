@@ -43,6 +43,17 @@ final class ActivityStore {
         HookWatcher.check(sessionsSeen: sessionsEverSeen, runningSince: startedAt)
     }
 
+    /// Applies what the watcher read. Sessions that have since ended are ignored rather
+    /// than resurrected — the read started while they were alive.
+    func applyTurns(_ turns: [String: TranscriptTurn]) {
+        for (id, turn) in turns { tracker.setTurn(turn, for: id) }
+    }
+
+    /// Which transcripts are worth re-reading right now: the live ones that have a path.
+    var transcriptPaths: [String: String] {
+        tracker.sessions.compactMapValues(\.transcriptPath)
+    }
+
     func updateAdmission(_ policy: AdmissionPolicy) {
         admission = policy
         policy.save()
@@ -92,6 +103,9 @@ final class ActivityStore {
                 aiTitle: request.payload.transcriptPath.flatMap {
                     SessionTitle.read(transcriptPath: $0)
                 },
+                // Recorded, not read: the reading is what `TranscriptWatcher` does, off
+                // this path, because this one has a blocked CLI waiting at the end of it.
+                transcriptPath: request.payload.transcriptPath,
                 permissionMode: request.payload.permissionMode,
                 // What is waiting, and what it is waiting for: a command wants a decision,
                 // a question wants an answer, a notification may mean neither.

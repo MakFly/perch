@@ -73,12 +73,33 @@ enum PanelPreview {
         return snapshot
     }
 
+    /// A reply with a heading, prose, a bullet and a fenced block — the four shapes the
+    /// card has to render, in one card, so the image answers all of them.
+    private static let reply = """
+        ## What the code actually does
+
+        The latency is not the right measure here, and the numbers show it — the read is \
+        cached after the first call.
+
+        - `distillBatch = 24` episodes per call
+        - the fallback path is never taken
+        - the second read is served from the page cache, which is why the median moved
+        - and the tail did not, because the tail is the first call of each session
+
+        ```
+        swift build && swift test
+        ```
+        """
+
     private static var working: SessionSnapshot {
-        session(
+        var snapshot = session(
             id: "a", cwd: "/Users/dev/design-ui", title: "Fix agent progress animation",
             prompt: "run the steps in order with a commit each",
             detail: "chrome-devtools: take_screenshot thread-store.ts",
             status: .working, agent: .claude, mode: "default", age: 22 * 60)
+        snapshot.turn = TranscriptTurn(
+            prompt: "why is the nvidia key path slower than the cached one?", reply: reply)
+        return snapshot
     }
 
     /// The one the panel exists for: nobody is watching and it may act without asking.
@@ -90,11 +111,16 @@ enum PanelPreview {
             mode: "bypassPermissions", subagents: 3, age: 96 * 60)
     }
 
+    /// Finished, so the card says `Done` rather than `Writing…`.
     private static var waiting: SessionSnapshot {
-        session(
+        var snapshot = session(
             id: "c", cwd: "/Users/dev/server-api", title: "Port the ledger to polars",
             prompt: "keep decimal arithmetic end to end",
             detail: "", status: .idle, agent: .codex, mode: "plan", age: 3 * 3_600)
+        snapshot.turn = TranscriptTurn(
+            prompt: "keep decimal arithmetic end to end",
+            reply: "Ported. Every column is `Decimal` now, and the two totals agree to the cent.")
+        return snapshot
     }
 
     private static var plan: TaskBoard {

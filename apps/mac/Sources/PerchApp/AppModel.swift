@@ -14,6 +14,9 @@ final class AppModel {
     let notch: NotchController
     let scenes = SceneMonitor()
     let updates = UpdateChecker()
+    /// Re-reads each session's last turn while the panel is open — off this actor, and off
+    /// the hook path, both for the same reason: neither can afford a megabyte read.
+    private let transcripts = TranscriptWatcher()
     let leaderboard = LeaderboardModel()
 
     /// Whether Perch is allowed to take the screen right now, and make a noise doing it.
@@ -146,6 +149,15 @@ final class AppModel {
         }
     }
 
+    /// One pass: read every live session's transcript off the main actor, then publish.
+    private func refreshTranscripts() async {
+        let paths = activity.transcriptPaths
+        guard !paths.isEmpty else { return }
+        let turns = await TranscriptWatcher.read(paths: paths)
+        guard !turns.isEmpty else { return }
+        activity.applyTurns(turns)
+    }
+
     func start() {
         usage.apply(preferences: activity.preferences)
         // A quota crossing is worth a glance, never an interruption: it goes through the
@@ -164,6 +176,17 @@ final class AppModel {
         }
         usage.start()
         scenes.start()
+
+        // The conversation on the cards is only worth keeping current while someone can
+        // see it. Closed, this costs nothing at all.
+        notch.onPanelVisibilityChanged = { [weak self] isVisible in
+            guard let self else { return }
+            if isVisible {
+                transcripts.start { [weak self] in await self?.refreshTranscripts() }
+            } else {
+                transcripts.stop()
+            }
+        }
 
         // An agent is installed and nothing is wired up: this is a first run, and the
         // notch would otherwise sit empty with no explanation.

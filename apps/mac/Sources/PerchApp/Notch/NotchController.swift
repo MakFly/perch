@@ -219,9 +219,15 @@ final class NotchController {
 
     // MARK: - Presentation
 
+    /// Called when the panel starts or stops being drawn, so work that only matters while
+    /// someone is looking — re-reading transcripts — runs then and not the rest of the day.
+    var onPanelVisibilityChanged: ((Bool) -> Void)?
+
     private func apply(_ next: NotchState) {
         guard next != state else { return }
+        let wasDrawing = state.drawsPanel
         state = next
+        if next.drawsPanel != wasDrawing { onPanelVisibilityChanged?(next.drawsPanel) }
         window.wantsKeyboard = next.wantsKeyboard
         // The canvas answers for the mouse only while it has something under the cursor to
         // answer for. At rest the strip is watched from the outside instead.

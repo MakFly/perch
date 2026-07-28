@@ -73,7 +73,17 @@ struct SessionCardView: View {
             VStack(alignment: .leading, spacing: 2) {
                 headline
 
-                if layout.showsPrompt, let prompt = session.prompt, !prompt.isEmpty {
+                // The exchange itself, when it has been read. This replaces the one-line
+                // echo of the prompt: the same question is in it, with the answer under it.
+                if layout.showsPrompt, let turn = session.turn, !turn.isEmpty {
+                    TranscriptView(
+                        turn: turn,
+                        fallbackPrompt: session.prompt,
+                        isFinished: !session.isWorking
+                    )
+                    .padding(.top, 3)
+                    .padding(.bottom, 1)
+                } else if layout.showsPrompt, let prompt = session.prompt, !prompt.isEmpty {
                     Text(t("You: %@", prompt))
                         .font(Theme.mono(10))
                         .foregroundStyle(Theme.secondary)
