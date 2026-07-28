@@ -61,9 +61,10 @@ Perch has no Dock icon and no menu bar item. Hover the notch for a summary, clic
 panel, `esc` or move away to dismiss. **Right-click** for Settings, Updates, Mute and Quit.
 
 At rest the notch shows a sprite per running agent and a live session count — live, not busy,
-because a CLI waiting on you is the one worth seeing. The pill turns amber as soon as one of
-them is waiting on you — a held request, a question, or a turn that has ended and handed the
-next move back.
+because a CLI waiting on you is the one worth seeing. The pill turns amber when one of them is
+*blocked* — a held request or a question, something you can answer from the notch. A turn that
+simply ended says `Done` and stays quiet: every turn ends, and an alert that is always on is
+not an alert.
 That is the whole strip: what is running, and how many. Everything else — the quota, the
 controls — is one hover away, and with nothing running the strip is exactly zero wide, so a Mac
 doing nothing looks like a Mac doing nothing.

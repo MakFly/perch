@@ -18,7 +18,7 @@ public enum SessionStatus: String, Sendable, Codable {
     case needsApproval
     /// A question or a plan is on screen, waiting for an answer rather than a decision.
     case waitingForAnswer
-    /// The turn is over and the next move is yours.
+    /// The turn is over. Nothing is blocked, nothing is owed — it is done.
     ///
     /// There used to be two of these. `Stop` produced `idle`, and the notification Claude
     /// Code raises when a turn stalls produced `waitingForInput` — the same situation, the
@@ -31,16 +31,19 @@ public enum SessionStatus: String, Sendable, Codable {
     /// Context is being compacted, which can take a while and otherwise reads as a hang.
     case compacting
 
-    /// Something is blocked on a person. These are the states worth crossing the room for,
-    /// and the ones the panel sorts and colours ahead of everything else.
+    /// Something is blocked on a person, and can be unblocked from here. These are the
+    /// states worth crossing the room for, and the ones the panel colours ahead of
+    /// everything else.
     ///
-    /// `idle` is one of them now. A turn that has ended is waiting on you exactly as much
-    /// as a notification saying so, and the notification was never the fact — it was
-    /// Claude Code noticing the fact, sometimes.
+    /// A finished turn is deliberately not one of them. `idle` was briefly counted here, on
+    /// the reasoning that a turn which has ended is waiting on you — which is true and
+    /// useless: every turn ends, so every session would spend most of its life amber, and
+    /// an alert that is always on is not an alert. What earns the colour is a request held
+    /// against a blocked CLI. Done is done.
     public var needsYou: Bool {
         switch self {
-        case .needsApproval, .waitingForAnswer, .idle: return true
-        case .working, .runningTool, .failed, .compacting: return false
+        case .needsApproval, .waitingForAnswer: return true
+        case .working, .runningTool, .idle, .failed, .compacting: return false
         }
     }
 }

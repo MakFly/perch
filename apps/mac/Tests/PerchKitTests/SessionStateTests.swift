@@ -114,7 +114,9 @@ private let epoch = Date(timeIntervalSince1970: 1_700_000_000)
     tracker.record(
         id: "s1", kind: "Notification", message: "Claude is waiting for your input", at: epoch)
     #expect(tracker.sessions["s1"]?.status == .idle)
-    #expect(tracker.sessions["s1"]?.status.needsYou == true)
+    // And it is not an alert. Every turn ends; a state that every session passes through
+    // several times an hour cannot be the one that earns the amber.
+    #expect(tracker.sessions["s1"]?.status.needsYou == false)
 }
 
 /// Subagents are children now, not a tally: each carries what it was asked for and when it
@@ -372,6 +374,6 @@ private let epoch = Date(timeIntervalSince1970: 1_700_000_000)
         at: epoch)
 
     #expect(tracker.sessions["quiet"]?.status == tracker.sessions["nagged"]?.status)
-    #expect(tracker.sessions["quiet"]?.status.needsYou == true)
+    #expect(tracker.sessions["quiet"]?.status.needsYou == false)
     #expect(tracker.workingCount == 0)
 }

@@ -87,6 +87,11 @@ final class ActivityStore {
     private static let silentKinds: Set<String> = [
         "SessionStart", "SessionEnd", "SubagentStart", "SubagentStop", "PreCompact",
         "StopFailure",
+        // `Claude is waiting for your input` is Claude Code restating what `Stop` said a
+        // minute earlier. It still moves the session's state — that happens below,
+        // whatever this list says — but a feed line telling you a finished turn has
+        // finished is a line that pushes a real one off the bottom.
+        "Notification",
     ]
 
     func record(_ request: PerchRequest) {

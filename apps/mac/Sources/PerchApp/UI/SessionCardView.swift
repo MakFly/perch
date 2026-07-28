@@ -272,7 +272,10 @@ extension SessionSnapshot {
     var activitySummary: (text: String, tint: Color) {
         switch status {
         case .compacting: return (t("Compacting context…"), Theme.warning)
-        case .idle: return (t("Waiting for you"), Theme.warning)
+        // Not "waiting for you": every turn ends, and a row that announces the end of
+        // each one as though it were owed something turns the panel into a to-do list of
+        // things already finished.
+        case .idle: return (t("Done"), Theme.tertiary)
         case .failed:
             return (lastDetail.isEmpty ? t("Ended on a failure") : lastDetail, Theme.danger)
         case .needsApproval: return (t("Waiting for your approval"), Theme.warning)
@@ -296,7 +299,7 @@ struct StatusDot: View {
         // waiting it is belongs on the line; the dot answers "does this need me".
         case .needsApproval, .waitingForAnswer: return Theme.warning
         case .compacting: return Theme.warning
-        case .idle: return Theme.warning
+        case .idle: return Theme.tertiary
         case .failed: return Theme.danger
         }
     }
