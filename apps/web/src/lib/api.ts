@@ -134,3 +134,36 @@ export function fetchProfile(handle: string, range: ProfileRange) {
 export function fetchHealth() {
   return get<{ ok: boolean; mode: Mode; version: string }>("/v1/health")
 }
+
+/**
+ * The DMG, straight from the release that carries it.
+ *
+ * A static link and a public repository, which is the whole design: no token to hold, no
+ * function to keep warm, nothing to rate-limit. `latest/download/<name>` is resolved by
+ * GitHub, so the asset ships under a fixed name as well as a versioned one.
+ */
+export const REPO = "MakFly/perch"
+export const DOWNLOAD_URL = `https://github.com/${REPO}/releases/latest/download/Perch.dmg`
+
+export interface Release {
+  version: string
+  sizeBytes: number
+}
+
+/** What the button can say before it is clicked. Anonymous, and read straight from GitHub. */
+export async function fetchRelease(): Promise<Release> {
+  const response = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
+    headers: { Accept: "application/vnd.github+json" },
+  })
+  if (!response.ok) throw new ApiError(`HTTP ${response.status}`, response.status)
+
+  const body = (await response.json()) as {
+    tag_name?: string
+    assets?: { name?: string; size?: number }[]
+  }
+  // The DMG, not the first asset: a release also carries notes and checksums.
+  const asset = body.assets?.find((a) => a.name?.endsWith(".dmg"))
+  if (!asset) throw new ApiError("no build published yet", 404)
+
+  return { version: (body.tag_name ?? "").replace(/^v/, ""), sizeBytes: asset.size ?? 0 }
+}

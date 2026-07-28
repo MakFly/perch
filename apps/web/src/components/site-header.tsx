@@ -1,5 +1,7 @@
+import { useQuery } from "@tanstack/react-query"
 import { Link, useLocation } from "react-router"
 
+import { DOWNLOAD_URL, fetchRelease } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
 const LINKS = [
@@ -35,17 +37,52 @@ export function SiteHeader() {
           ))}
         </nav>
 
-        <a
-          href="https://github.com/MakFly/perch"
-          target="_blank"
-          rel="noreferrer"
-          className="ml-auto text-sm text-ink-3 transition-colors hover:text-ink-2"
-        >
-          Télécharger
-        </a>
+        <DownloadLink />
       </div>
     </header>
   )
+}
+
+/**
+ * The DMG, in one click.
+ *
+ * The version is asked for separately and the link does not wait for it: a button that
+ * appears only once a second request has answered is a button people miss. When nothing is
+ * published yet the API answers 404, and saying so beats a link that downloads an error.
+ */
+function DownloadLink() {
+  const { data, isError } = useQuery({
+    queryKey: ["release"],
+    queryFn: fetchRelease,
+    staleTime: 30 * 60_000,
+    retry: false,
+  })
+
+  if (isError) {
+    return (
+      <span className="ml-auto text-sm text-ink-3" title="Aucune version publiée">
+        Bientôt
+      </span>
+    )
+  }
+
+  return (
+    <a
+      href={DOWNLOAD_URL}
+      className="ml-auto flex items-center gap-2 rounded-md bg-ink px-3 py-1.5 text-sm font-medium text-surface transition-opacity hover:opacity-90"
+    >
+      Télécharger
+      {data ? (
+        <span className="text-xs font-normal opacity-60">
+          {data.version} · {megabytes(data.sizeBytes)}
+        </span>
+      ) : null}
+    </a>
+  )
+}
+
+function megabytes(bytes: number): string {
+  return `${(bytes / 1_000_000).toFixed(1).replace(".", ",")} Mo`
 }
 
 /** The product's own mark: the cutout, with something perched to the left of it. */
