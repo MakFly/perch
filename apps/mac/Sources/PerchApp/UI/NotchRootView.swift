@@ -680,6 +680,12 @@ private struct TabBar: View {
 private struct ActivityList: View {
     let model: AppModel
 
+    /// The one row that is open, if any.
+    ///
+    /// One at a time, and closed to begin with. Six sessions of full cards is four screens
+    /// of scrolling, and a panel you have to scroll is a panel you do not glance at.
+    @State private var opened: String?
+
     private var activity: ActivityStore { model.activity }
 
     var body: some View {
@@ -702,6 +708,10 @@ private struct ActivityList: View {
                             tasks: model.tasks.board(for: session.id),
                             layout: model.preferences.layout,
                             isSelected: model.switcher.isOpen && model.switcher.index == position,
+                            isOpen: opened == session.id,
+                            onToggle: {
+                                opened = opened == session.id ? nil : session.id
+                            },
                             onJump: { TerminalJumper.jump(to: session.client) },
                             onSilence: { rule in
                                 var policy = activity.admission

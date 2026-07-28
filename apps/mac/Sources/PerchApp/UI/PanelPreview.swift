@@ -18,7 +18,7 @@ enum PanelPreview {
         VStack(alignment: .leading, spacing: Theme.rowSpacing) {
             header
 
-            SessionCardView(session: working, tasks: plan, layout: layout)
+            SessionCardView(session: working, tasks: plan, layout: layout, isOpen: true)
             SessionCardView(session: unattended, layout: layout)
             SessionCardView(session: waiting, layout: layout)
         }
@@ -269,8 +269,9 @@ enum PanelPreview {
                     }
 
                     VStack(alignment: .leading, spacing: Theme.rowSpacing) {
-                        SessionCardView(session: working, tasks: plan)
+                        SessionCardView(session: working, tasks: plan, isOpen: true)
                         SessionCardView(session: unattended)
+                        SessionCardView(session: waiting)
                     }
                     .padding(.horizontal, 14)
                 }

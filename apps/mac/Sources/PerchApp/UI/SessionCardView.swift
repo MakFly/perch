@@ -17,6 +17,13 @@ struct SessionCardView: View {
     /// Selected by the switcher. Distinct from hover: the keyboard and the mouse can point
     /// at different cards at the same time.
     var isSelected = false
+    /// Whether this card is showing the exchange, the subagents and the plan.
+    ///
+    /// Closed is the default and the resting state of the whole list. A card open is a card
+    /// asked for: six sessions of full cards is four screens of scrolling, and the panel
+    /// exists to be read at a glance.
+    var isOpen = false
+    var onToggle: (() -> Void)?
     var onJump: (() -> Void)?
     var onSilence: ((AdmissionRule) -> Void)?
 
@@ -38,8 +45,15 @@ struct SessionCardView: View {
         card
             .contentShape(Rectangle())
             .onHover { isHovered = $0 }
-            .onTapGesture { if plan.isPossible { onJump?() } }
-            .help(plan.summary)
+            // The row opens and closes; the terminal chip is what jumps.
+            //
+            // The whole card used to be the jump target, which is a lot of surface for an
+            // action that switches application — and it left nowhere to click for the thing
+            // you want far more often, which is to see what this session is actually doing.
+            // The chip has carried the ↗ since it became clickable, so the affordance was
+            // already pointing at the right place.
+            .onTapGesture { onToggle?() }
+            .help(isOpen ? t("Close") : t("Open"))
             // Silencing from the card itself is the only entry point that costs nothing:
             // the session you want gone is the one you are already looking at.
             .contextMenu {
@@ -75,7 +89,7 @@ struct SessionCardView: View {
 
                 // The exchange itself, when it has been read. This replaces the one-line
                 // echo of the prompt: the same question is in it, with the answer under it.
-                if layout.showsPrompt, let turn = session.turn, !turn.isEmpty {
+                if isOpen, layout.showsPrompt, let turn = session.turn, !turn.isEmpty {
                     TranscriptView(
                         turn: turn,
                         fallbackPrompt: session.prompt,
@@ -83,7 +97,9 @@ struct SessionCardView: View {
                     )
                     .padding(.top, 3)
                     .padding(.bottom, 1)
-                } else if layout.showsPrompt, let prompt = session.prompt, !prompt.isEmpty {
+                } else if isOpen, layout.showsPrompt, let prompt = session.prompt,
+                    !prompt.isEmpty
+                {
                     Text(t("You: %@", prompt))
                         .font(Theme.mono(10))
                         .foregroundStyle(Theme.secondary)
@@ -96,7 +112,7 @@ struct SessionCardView: View {
                 // Children, not a number. A count says a session is busy; this says what
                 // it fanned out to and how long that one has been going, which is the
                 // question you actually have ten minutes into a quiet card.
-                if layout.showsTasks, !session.children.isEmpty {
+                if isOpen, layout.showsTasks, !session.children.isEmpty {
                     ForEach(session.children) { child in
                         HStack(spacing: 4) {
                             Text("└")
@@ -115,13 +131,13 @@ struct SessionCardView: View {
                     }
                 }
 
-                if layout.showsTasks, !tasks.isEmpty {
+                if isOpen, layout.showsTasks, !tasks.isEmpty {
                     TaskBoardView(board: tasks)
                         .padding(.top, 2)
                 } else if !tasks.isEmpty, let current = tasks.current {
-                    // Clean still says where the plan is: the running step and the score,
-                    // on the one line it has. A card that hides the plan entirely makes
-                    // Clean a different product rather than a denser one.
+                    // A closed card still says where the plan is: the running step and the
+                    // score, on the one line it has. A row that hides the plan entirely
+                    // makes closed a different product rather than a denser one.
                     Text("▸ \(current.subject)  \(tasks.completed)/\(tasks.tasks.count)")
                         .font(Theme.mono(9))
                         .foregroundStyle(Theme.tertiary)
@@ -136,18 +152,20 @@ struct SessionCardView: View {
         .padding(.horizontal, 8)
         .background(
             RoundedRectangle(cornerRadius: Theme.cornerRadius)
-                .fill(Theme.raised.opacity(isSelected || (isHovered && plan.isPossible) ? 0.9 : 0.55))
+                .fill(Theme.raised.opacity(isSelected || isHovered || isOpen ? 0.9 : 0.55))
         )
         .overlay(
             RoundedRectangle(cornerRadius: Theme.cornerRadius)
                 .stroke(
                     isSelected
                         ? Theme.info
-                        : (isHovered && plan.isPossible ? Theme.hairlineStrong : Theme.hairline),
+                        : (isHovered || isOpen ? Theme.hairlineStrong : Theme.hairline),
                     lineWidth: isSelected ? 1.5 : 1)
         )
         .animation(.easeOut(duration: 0.12), value: isHovered)
         .animation(.easeOut(duration: 0.12), value: isSelected)
+        // Only the rows below this one move, and they move once.
+        .animation(.easeOut(duration: 0.16), value: isOpen)
     }
 
     private var headline: some View {
@@ -191,9 +209,18 @@ struct SessionCardView: View {
                 // the card is clickable was discoverable by hovering it, which is to say by
                 // already suspecting it — the affordance has to be visible before the
                 // cursor arrives, or it is not an affordance.
-                Chip(
-                    text: plan.isPossible ? "\(terminal) ↗" : terminal,
-                    tint: isHovered && plan.isPossible ? Theme.info : nil)
+                //
+                // And it is a button now rather than a label, because the row it sits on
+                // does something else.
+                if plan.isPossible {
+                    Button { onJump?() } label: {
+                        Chip(text: "\(terminal) ↗", tint: isHovered ? Theme.info : nil)
+                    }
+                    .buttonStyle(.plain)
+                    .help(plan.summary)
+                } else {
+                    Chip(text: terminal, tint: nil)
+                }
             }
 
             Text(age)
@@ -202,6 +229,13 @@ struct SessionCardView: View {
                 .monospacedDigit()
 
             StatusDot(status: session.status)
+
+            // Which way this row goes when you click it.
+            Image(systemName: "chevron.down")
+                .font(.system(size: 7, weight: .bold))
+                .foregroundStyle(isHovered ? Theme.secondary : Theme.tertiary)
+                .rotationEffect(.degrees(isOpen ? 0 : -90))
+                .frame(width: 8)
         }
     }
 
