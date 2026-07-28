@@ -109,9 +109,11 @@ private let epoch = Date(timeIntervalSince1970: 1_700_000_000)
         at: epoch)
     #expect(tracker.sessions["s1"]?.status == .runningTool)
 
+    // The same state `Stop` produces. The notification is Claude Code noticing the fact,
+    // not a second fact.
     tracker.record(
         id: "s1", kind: "Notification", message: "Claude is waiting for your input", at: epoch)
-    #expect(tracker.sessions["s1"]?.status == .waitingForInput)
+    #expect(tracker.sessions["s1"]?.status == .idle)
     #expect(tracker.sessions["s1"]?.status.needsYou == true)
 }
 
@@ -352,4 +354,24 @@ private let epoch = Date(timeIntervalSince1970: 1_700_000_000)
     let before = tracker.sessions
     tracker.prune(now: epoch.addingTimeInterval(60))
     #expect(tracker.sessions == before)
+}
+
+/// Two sessions in identical silence must be reported identically. They were not: `Stop`
+/// gave `idle`, the stall notification gave `waitingForInput`, and only the second counted
+/// in the notch's amber — so which one you got depended on whether Claude Code happened to
+/// notice.
+@Test func aFinishedTurnIsWaitingOnYouWhetherOrNotClaudeSaidSo() {
+    var tracker = SessionTracker()
+    tracker.record(id: "quiet", kind: "PreToolUse", at: epoch)
+    tracker.record(id: "quiet", kind: "Stop", at: epoch)
+
+    tracker.record(id: "nagged", kind: "PreToolUse", at: epoch)
+    tracker.record(id: "nagged", kind: "Stop", at: epoch)
+    tracker.record(
+        id: "nagged", kind: "Notification", message: "Claude is waiting for your input",
+        at: epoch)
+
+    #expect(tracker.sessions["quiet"]?.status == tracker.sessions["nagged"]?.status)
+    #expect(tracker.sessions["quiet"]?.status.needsYou == true)
+    #expect(tracker.workingCount == 0)
 }

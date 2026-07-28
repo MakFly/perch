@@ -272,12 +272,11 @@ extension SessionSnapshot {
     var activitySummary: (text: String, tint: Color) {
         switch status {
         case .compacting: return (t("Compacting context…"), Theme.warning)
-        case .idle: return (t("Waiting for you"), Theme.tertiary)
+        case .idle: return (t("Waiting for you"), Theme.warning)
         case .failed:
             return (lastDetail.isEmpty ? t("Ended on a failure") : lastDetail, Theme.danger)
         case .needsApproval: return (t("Waiting for your approval"), Theme.warning)
         case .waitingForAnswer: return (t("Waiting for your answer"), Theme.warning)
-        case .waitingForInput: return (t("Waiting for your input"), Theme.warning)
         case .working, .runningTool:
             // The same line either way: what it is doing is the command, and the dot
             // beside it already says whether a tool is in flight.
@@ -295,9 +294,9 @@ struct StatusDot: View {
         case .working, .runningTool: return Theme.active
         // Everything that is blocked on a person shares one colour. Which flavour of
         // waiting it is belongs on the line; the dot answers "does this need me".
-        case .needsApproval, .waitingForAnswer, .waitingForInput: return Theme.warning
+        case .needsApproval, .waitingForAnswer: return Theme.warning
         case .compacting: return Theme.warning
-        case .idle: return Theme.tertiary
+        case .idle: return Theme.warning
         case .failed: return Theme.danger
         }
     }

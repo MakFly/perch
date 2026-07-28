@@ -37,9 +37,14 @@ struct TranscriptView: View {
                         .lineLimit(2)
                         .truncationMode(.tail)
                     Spacer(minLength: 6)
-                    Text(isFinished ? t("Done") : t("Writing…"))
-                        .font(Theme.mono(9))
-                        .foregroundStyle(isFinished ? Theme.tertiary : Theme.active)
+                    // Only while it is being written. `Done` beside a row whose own line
+                    // already says "Waiting for you" is the same fact twice, and it was
+                    // the pair of them that read as a contradiction.
+                    if !isFinished {
+                        Text(t("Writing…"))
+                            .font(Theme.mono(9))
+                            .foregroundStyle(Theme.active)
+                    }
                 }
                 .padding(.horizontal, 9)
                 .padding(.vertical, 7)

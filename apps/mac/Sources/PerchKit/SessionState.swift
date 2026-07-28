@@ -18,10 +18,13 @@ public enum SessionStatus: String, Sendable, Codable {
     case needsApproval
     /// A question or a plan is on screen, waiting for an answer rather than a decision.
     case waitingForAnswer
-    /// Claude Code said it is waiting for input — the notification it raises when a turn
-    /// stalls on the user rather than ending.
-    case waitingForInput
-    /// Claude handed control back and is waiting on the user.
+    /// The turn is over and the next move is yours.
+    ///
+    /// There used to be two of these. `Stop` produced `idle`, and the notification Claude
+    /// Code raises when a turn stalls produced `waitingForInput` — the same situation, the
+    /// same next move, two states, two sentences, and only one of them counted in the
+    /// notch's amber. Which of the two you got depended on whether a notification happened
+    /// to fire, so two sessions sitting in identical silence were reported differently.
     case idle
     /// The turn ended on a failure.
     case failed
@@ -30,10 +33,14 @@ public enum SessionStatus: String, Sendable, Codable {
 
     /// Something is blocked on a person. These are the states worth crossing the room for,
     /// and the ones the panel sorts and colours ahead of everything else.
+    ///
+    /// `idle` is one of them now. A turn that has ended is waiting on you exactly as much
+    /// as a notification saying so, and the notification was never the fact — it was
+    /// Claude Code noticing the fact, sometimes.
     public var needsYou: Bool {
         switch self {
-        case .needsApproval, .waitingForAnswer, .waitingForInput: return true
-        case .working, .runningTool, .idle, .failed, .compacting: return false
+        case .needsApproval, .waitingForAnswer, .idle: return true
+        case .working, .runningTool, .failed, .compacting: return false
         }
     }
 }
@@ -260,9 +267,10 @@ public struct SessionTracker: Sendable {
             session.status = Self.answerTools.contains(tool ?? "") ? .waitingForAnswer : .needsApproval
         case "Notification":
             // Claude Code raises these for several reasons; only one of them means the
-            // turn has stopped and is waiting on a person.
+            // turn has stopped and is waiting on a person — and it says nothing `Stop` did
+            // not already say, so it lands on the same state.
             session.status =
-                Self.saysWaitingForInput(message ?? detail) ? .waitingForInput : session.status
+                Self.saysWaitingForInput(message ?? detail) ? .idle : session.status
         case "PreToolUse":
             session.status = .runningTool
         case "PostToolUse", "PostToolUseFailure", "PermissionDenied":
