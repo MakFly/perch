@@ -424,7 +424,16 @@ which is the reason to open the notch at all.
       is unanswerable
 - [x] `Perch --answer "Postgres | Auth, Billing"` answers from the command line, which is
       how the path is exercised without a click
-- [ ] Approve a plan as Manual / Auto / Bypass rather than plain allow
+- [x] **Approve a plan as Manual / Accept edits / Bypass rather than plain allow.** Not a
+      nicety — a plain allow did not work at all. `ExitPlanMode` declares
+      `requiresUserInteraction()`, and Claude Code drops an `allow` carrying no
+      `updatedInput` for such a tool and prompts in the terminal as if the hook had said
+      nothing, so Approve looked like a dead button. The mode is the second half: an
+      approval that names none leaves the session in `plan`, where the first edit comes
+      back refused. It rides as `updatedPermissions: [{type: "setMode", mode, destination:
+      "session"}]`, the same update Claude Code's own prompt applies. `auto` is left off
+      the card because it is gated behind a check the hook cannot see and silently falls
+      back to `default`.
 - [ ] Allow All / Deny All across the whole queue
 - [x] **Subagents as children rather than a tally.** Each carries what it was asked for —
       read from whichever key the payload used, because the spelling has moved between
