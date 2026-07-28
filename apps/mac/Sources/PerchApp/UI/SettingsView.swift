@@ -14,7 +14,6 @@ struct SettingsView: View {
         case sound = "Sound"
         case filters = "Filters"
         case integrations = "Integrations"
-        case license = "License"
         case about = "About"
 
         var id: String { rawValue }
@@ -25,7 +24,6 @@ struct SettingsView: View {
             case .sound: return "speaker.wave.2"
             case .filters: return "line.3.horizontal.decrease.circle"
             case .integrations: return "puzzlepiece.extension"
-            case .license: return "key"
             case .about: return "info.circle"
             }
         }
@@ -47,7 +45,6 @@ struct SettingsView: View {
                     case .sound: SoundPane(model: model)
                     case .filters: FiltersPane(model: model)
                     case .integrations: IntegrationsPane(model: model)
-                    case .license: LicensePane(model: model)
                     case .about: AboutPane(model: model)
                     }
                 }
@@ -972,84 +969,6 @@ struct HookSite {
             let events = text.components(separatedBy: "perch-hook").count - 1
             return HookSite(
                 title: title, path: path, isInstalled: events > 0, eventCount: events)
-        }
-    }
-}
-
-// MARK: - License
-
-private struct LicensePane: View {
-    let model: AppModel
-
-    @State private var key = ""
-
-    private var license: LicenseModel { model.license }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Section(t("Status"), note: nil) {
-                HStack {
-                    Image(systemName: license.state.isEntitled ? "checkmark.seal.fill" : "seal")
-                        .foregroundStyle(license.state.isEntitled ? Color.green : Color.orange)
-                    Text(license.state.label)
-                    Spacer()
-                    if license.isWorking { ProgressView().controlSize(.small) }
-                }
-                if let error = license.lastError {
-                    Text(error).font(.callout).foregroundStyle(.orange)
-                }
-                // The one thing worth saying out loud, because it is unusual.
-                Text(
-                    t(
-                        "Approving, denying and answering always work — a licence never sits "
-                            + "between Claude Code and a permission prompt."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            if license.record.key == nil {
-                Section(t("Activate"), note: t("The key is in your purchase email.")) {
-                    HStack {
-                        TextField(t("licence key"), text: $key)
-                            .textFieldStyle(.roundedBorder)
-                        Button(t("Activate")) {
-                            Task { await license.activate(key: key); key = "" }
-                        }
-                        .disabled(key.isEmpty || license.isWorking)
-                    }
-                }
-            } else {
-                Section(t("This Mac"), note: nil) {
-                    if license.record.seats > 1 {
-                        Text(t("%lld activations on this licence", license.record.seats))
-                            .foregroundStyle(.secondary)
-                    }
-                    HStack {
-                        Button(t("Check again")) { Task { await license.refresh() } }
-                        Button(t("Deactivate this Mac")) { Task { await license.deactivate() } }
-                        Spacer()
-                    }
-                    .disabled(license.isWorking)
-                    Text(t("Deactivating frees the seat so you can use it on another Mac."))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Section(t("What a licence unlocks"), note: nil) {
-                ForEach(License.Feature.allCases, id: \.rawValue) { feature in
-                    HStack {
-                        Image(
-                            systemName: license.allows(feature)
-                                ? "checkmark.circle.fill" : "lock"
-                        )
-                        .foregroundStyle(license.allows(feature) ? Color.green : Color.secondary)
-                        Text(t(feature.rawValue))
-                        Spacer()
-                    }
-                }
-            }
         }
     }
 }

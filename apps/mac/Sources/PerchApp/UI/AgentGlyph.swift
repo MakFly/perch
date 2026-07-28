@@ -11,7 +11,7 @@ import SwiftUI
 /// row of creatures reads as "my agents" in a way three abstract marks never did, and
 /// because at 16pt the silhouette is what identifies them. They are drawn here, from
 /// nothing: the shapes evoke the archetypes, the pixels are ours, and nothing in this file
-/// came from anyone's asset. That matters for something that will ship behind a licence.
+/// came from anyone's asset. That matters for something that will be distributed.
 ///
 /// Two tones each, and a different silhouette per agent, so two of them side by side are
 /// told apart by shape and not only by colour — which matters for anyone who cannot rely
@@ -150,7 +150,7 @@ struct AgentGlyph: View {
 
     /// The original, drawn here from nothing — and what you get back the moment the
     /// `Sprites` directory is not in the bundle. Kept deliberately: it owes nobody
-    /// anything, which is the property that matters for something shipped behind a licence.
+    /// anything, which is the property that matters for something shipped to other people.
     private var drawn: some View {
         let art = self.art
         return VStack(spacing: 0) {

@@ -13,7 +13,6 @@ final class AppModel {
     let usage = UsageModel()
     let notch: NotchController
     let scenes = SceneMonitor()
-    let license = LicenseModel()
     let updates = UpdateChecker()
     let leaderboard = LeaderboardModel()
 
@@ -73,7 +72,7 @@ final class AppModel {
 
     private func registerSwitcherShortcut() {
         let preferences = activity.preferences
-        guard preferences.switcherEnabled, license.allows(.switcher) else {
+        guard preferences.switcherEnabled else {
             hotKey.unregister()
             return
         }
@@ -170,9 +169,8 @@ final class AppModel {
         // notch would otherwise sit empty with no explanation.
         if EnvironmentScan.needsOnboarding() { showOnboarding() }
 
-        // Both re-checked at launch, neither blocking it.
+        // Re-checked at launch, without blocking it.
         updates.wantsBeta = activity.preferences.betaUpdates
-        Task { await license.refresh() }
         Task { await updates.check() }
 
         registerSwitcherShortcut()
@@ -556,7 +554,6 @@ final class AppModel {
         report.field(
             "version",
             bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?")
-        report.field("licence", license.state.label)
         report.field("running since", activity.startedAt.formatted(.iso8601))
 
         report.section("System")

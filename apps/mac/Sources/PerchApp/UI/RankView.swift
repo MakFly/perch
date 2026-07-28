@@ -16,9 +16,7 @@ struct RankView: View {
         VStack(alignment: .leading, spacing: 10) {
             header
 
-            if !model.license.allows(.leaderboard) {
-                LicenseGate(state: model.license.state)
-            } else if leaderboard.isJoined {
+            if leaderboard.isJoined {
                 joined
             } else {
                 JoinForm(model: model)
@@ -27,7 +25,6 @@ struct RankView: View {
             Spacer(minLength: 0)
         }
         .task {
-            guard model.license.allows(.leaderboard) else { return }
             // After the panel has finished growing, not while it is.
             //
             // `Motion.morph` runs for 0.38s, and starting a network round trip on the
@@ -310,28 +307,6 @@ private struct Field: View {
                     .fill(Theme.raised)
                     .overlay(
                         RoundedRectangle(cornerRadius: 6).stroke(Theme.hairline, lineWidth: 1)))
-    }
-}
-
-// MARK: - Licence
-
-/// The leaderboard is one of the four things a licence unlocks. Approving, denying and
-/// answering are not, and never will be — see `License.Feature`.
-private struct LicenseGate: View {
-    let state: LicenseState
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(t("The leaderboard needs a licence."))
-                .font(Theme.label(11))
-                .foregroundStyle(Theme.secondary)
-            Text(t("Approving, denying and answering never do — those always work."))
-                .font(Theme.mono(9))
-                .foregroundStyle(Theme.tertiary)
-            Text(state.label)
-                .font(Theme.mono(9))
-                .foregroundStyle(Theme.warning)
-        }
     }
 }
 
