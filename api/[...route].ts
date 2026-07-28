@@ -7,10 +7,15 @@
  * prefix, which is what `vercel.json` rewrites `/v1/*` onto so the Mac app can keep asking
  * for `/v1/leaderboard` on either.
  *
- * The filename is an **optional catch-all** and has to be. As `api/index.ts` this function
- * answers `/api` and nothing below it, so every real request — `/api/v1/health` — came
- * back as Vercel's own 404 with no trace of the function having run. `[[...route]]` claims
- * `/api` and everything under it, which is what Hono expects to route.
+ * The filename is a **catch-all** and has to be. As `api/index.ts` this function answers
+ * `/api` and nothing below it, so every real request — `/api/v1/health` — came back as
+ * Vercel's own 404 with no trace of the function having run.
+ *
+ * Single brackets, not double. `[[...route]]` — the optional catch-all — built into a
+ * function locally under CLI 58 and silently produced no function at all on the build
+ * machine, which runs 56.5: the deploy went green, the site served, and every API path
+ * 404'd. `[...route]` is the form the `api/` directory has always used, and nothing here
+ * needs to answer a bare `/api`.
  */
 
 import { Hono } from "hono";
