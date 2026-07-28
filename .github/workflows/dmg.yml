@@ -1,0 +1,128 @@
+# Builds the DMG anyone can download and install.
+#
+#   • push a tag `v0.2.0`  → a GitHub Release with Perch-0.2.0.dmg attached
+#   • Actions › Run workflow → the same DMG as a downloadable artifact
+#
+# Deliberately not on every push: this repository is private, where a macOS runner minute
+# is billed at ten times a Linux one, and a DMG per commit is not worth that.
+#
+# The build is ad-hoc signed. No Developer ID certificate lives in this repository, and
+# `release.sh --build` says so rather than producing something that merely looks signed —
+# see the release notes below for what that means on the machine that downloads it.
+name: DMG
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # only used by the release step, on a tag
+
+jobs:
+  dmg:
+    # Xcode 26 / Swift 6.2, which is the toolchain the app is developed against.
+    runs-on: macos-26
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Select Xcode
+        run: |
+          # Newest first: the image ships more than one, and the default is not always it.
+          for candidate in /Applications/Xcode_26*.app /Applications/Xcode.app; do
+            [ -d "$candidate" ] || continue
+            sudo xcode-select -s "$candidate"
+            break
+          done
+          xcodebuild -version
+          swift --version
+
+      - name: Version
+        id: version
+        run: |
+          # A tag names the version; anything else is a dated build off the commit, so two
+          # manual runs never produce the same filename.
+          ref="${GITHUB_REF#refs/tags/}"
+          if [ "$ref" != "$GITHUB_REF" ]; then
+            version="${ref#v}"
+          else
+            version="0.0.0-$(date -u +%Y%m%d)-${GITHUB_SHA::7}"
+          fi
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          echo "› building $version"
+
+      - name: Test
+        run: swift test
+        working-directory: apps/mac
+
+      - name: Build DMG
+        env:
+          PERCH_VERSION: ${{ steps.version.outputs.version }}
+          PERCH_BUILD: ${{ github.run_number }}
+        run: ./scripts/release.sh --build
+
+      - name: Verify the bundle inside it
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          dmg="dist/Perch-$VERSION.dmg"
+          mount="$(mktemp -d)"
+          hdiutil attach "$dmg" -nobrowse -quiet -mountpoint "$mount"
+          # Universal, or an Intel Mac gets a bundle that refuses to launch — and the
+          # failure surfaces on someone else's machine, not here.
+          lipo -info "$mount/Perch.app/Contents/MacOS/Perch"
+          codesign --verify --strict --verbose=2 "$mount/Perch.app"
+          # Without these the onboarding's one button is a no-op on every machine that
+          # installed from the DMG, and the notch stays empty with nothing to explain it.
+          for script in install-hooks.sh install-extension.sh uninstall.sh lib.sh; do
+            test -f "$mount/Perch.app/Contents/Resources/scripts/$script"
+          done
+          /usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' \
+            "$mount/Perch.app/Contents/Info.plist"
+          hdiutil detach "$mount" -quiet
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Perch-${{ steps.version.outputs.version }}
+          path: dist/Perch-${{ steps.version.outputs.version }}.dmg
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # Twice, under two names. The versioned one is what people keep; the fixed one is
+          # what `releases/latest/download/Perch.dmg` resolves to, which is the link on the
+          # website and the only one that survives a new version.
+          cp "dist/Perch-$VERSION.dmg" dist/Perch.dmg
+          # The quarantine note is not a footnote: an ad-hoc signed app that arrived from a
+          # browser is refused by Gatekeeper with "Perch is damaged", which reads like a
+          # corrupt download and is not one.
+          gh release create "${GITHUB_REF#refs/tags/}" \
+            "dist/Perch-$VERSION.dmg" dist/Perch.dmg \
+            --title "Perch $VERSION" \
+            --generate-notes \
+            --notes "
+          ## Install
+
+          1. Open the DMG, drag **Perch** to Applications.
+          2. Clear the quarantine flag, because this build is ad-hoc signed rather than
+             notarised by Apple:
+
+             \`\`\`bash
+             xattr -dr com.apple.quarantine /Applications/Perch.app
+             \`\`\`
+
+          3. Launch it. There is no Dock icon and no menu bar item — Perch lives in the
+             notch. Right-click the notch for Settings and Quit.
+          4. The first screen finds your CLIs and wires them up. Then **restart any Claude
+             Code session already open** — hooks are read at session start, so a running
+             one ignores them and the notch stays empty.
+
+          Requires macOS 14+. Universal (Apple Silicon and Intel).
+          "

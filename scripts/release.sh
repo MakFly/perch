@@ -24,7 +24,10 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 MODE="${1:---check}"
 DIST="$PERCH_ROOT/dist"
 APP="$PERCH_ROOT/apps/mac/build/Perch.app"
-VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Contents/Info.plist" 2>/dev/null || echo "0.1.0")"
+# Read from the bundle that is already there, which on a fresh checkout is none — hence the
+# fallback, and hence PERCH_VERSION taking precedence: CI knows the version from the tag
+# before anything has been built, and passes the same value on to make-app.sh.
+VERSION="${PERCH_VERSION:-$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Contents/Info.plist" 2>/dev/null || echo "0.1.0")}"
 DMG="$DIST/Perch-$VERSION.dmg"
 
 check() {

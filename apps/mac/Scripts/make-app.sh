@@ -52,12 +52,23 @@ done
 # it must not silently fall back to SF Mono.
 cp -R "$MAC_DIR/Resources/Fonts" "$APP/Contents/Resources/"
 
-# Agent sprites. Optional by construction: with this directory absent, AgentGlyph falls
-# back to the pixel art drawn in Swift, and nothing else changes. See Sprites/NOTICE.txt
-# for where these came from and what that means for a paid build.
+# Agent sprites, if anyone drops some in. Optional by construction: with this directory
+# absent — which is how the repository ships — AgentGlyph draws its own pixel art and
+# nothing else changes.
 if [ -d "$MAC_DIR/Resources/Sprites" ]; then
   cp -R "$MAC_DIR/Resources/Sprites" "$APP/Contents/Resources/"
 fi
+
+# The scripts that wire Perch into the CLIs, carried inside the bundle so a copy dragged
+# out of the DMG is a complete install: the onboarding runs these, and `uninstall.sh` is
+# documented as shipping with the app. Only the user-facing ones — `release.sh`,
+# `remove.sh`, `setup.sh` and `appcast-keys.sh` need a clone and a Postgres container, and
+# an app that carries a script it cannot run is offering something that will fail.
+mkdir -p "$APP/Contents/Resources/scripts"
+for script in lib.sh install-hooks.sh install-extension.sh configure-kitty.sh \
+  usage-bridge.sh remote.sh uninstall.sh; do
+  cp "$MAC_DIR/../../scripts/$script" "$APP/Contents/Resources/scripts/"
+done
 
 # The public half of the appcast key, baked in so the app can verify an update before it
 # ever looks at the version. Absent until ./scripts/appcast-keys.sh has been run, in which
@@ -112,6 +123,19 @@ cat >"$APP/Contents/Info.plist" <<'PLIST'
 </dict>
 </plist>
 PLIST
+
+# The version is hardcoded above so a plain `make-app.sh` needs no arguments, and
+# overridable here so a tagged CI build produces a bundle that says what it is. A DMG named
+# 0.2.0 containing an app that reports 0.1.0 is the kind of mismatch the updater compares
+# against and gets wrong.
+if [ -n "${PERCH_VERSION:-}" ]; then
+  /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $PERCH_VERSION" \
+    "$APP/Contents/Info.plist" >/dev/null
+fi
+if [ -n "${PERCH_BUILD:-}" ]; then
+  /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $PERCH_BUILD" \
+    "$APP/Contents/Info.plist" >/dev/null
+fi
 
 if [ -n "$APPCAST_KEY" ]; then
   /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $APPCAST_KEY" \

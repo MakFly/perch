@@ -6,14 +6,23 @@ import Foundation
 /// The behaviour lives in `scripts/`, not in Swift: one place to fix, and what happened is
 /// inspectable afterwards in the files it touched. This only finds them and runs them.
 ///
-/// **They are not always there.** The path is derived from the app bundle, which works in
-/// the development layout (`apps/mac/build/Perch.app`) and not for a copy dragged out of
-/// the DMG into `/Applications`. Every caller therefore has to handle `nil` — offering a
-/// button that silently does nothing is worse than offering none.
+/// **Two places, in this order.** A shipped build carries its own copy in
+/// `Contents/Resources/scripts`, so an app dragged out of the DMG into `/Applications` can
+/// wire up the CLIs it found — without it, the onboarding's one button was a no-op on every
+/// machine that installed Perch the way people actually install things. A development build
+/// falls back to the repository around it (`apps/mac/build/Perch.app`), where the scripts
+/// are the originals rather than a copy and an edit takes effect without a rebuild.
+///
+/// Still optional, and callers still handle `nil`: a bundle assembled without the copy is a
+/// valid bundle, and a button that silently does nothing is worse than no button.
 enum RepoScripts {
 
-    /// The repository's `scripts/` directory, if this build is running from inside it.
+    /// The `scripts/` directory to run from: bundled first, repository second.
     static var directory: URL? {
+        let bundled = Bundle.main.resourceURL?
+            .appendingPathComponent("scripts", isDirectory: true)
+        if let bundled, FileManager.default.fileExists(atPath: bundled.path) { return bundled }
+
         let root = Bundle.main.bundleURL
             .deletingLastPathComponent()  // build/
             .deletingLastPathComponent()  // mac/

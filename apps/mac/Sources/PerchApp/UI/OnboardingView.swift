@@ -124,24 +124,17 @@ struct OnboardingView: View {
         message = nil
 
         Task {
-            let root = Bundle.main.bundleURL
-                .deletingLastPathComponent()  // build/
-                .deletingLastPathComponent()  // mac/
-                .deletingLastPathComponent()  // apps/
-                .deletingLastPathComponent()  // repo root
             var done: [String] = []
 
-            if run(root.appendingPathComponent("scripts/install-hooks.sh"), ["--global"]) {
+            if RepoScripts.run("install-hooks.sh", ["--global"]) {
                 done.append("Claude Code")
             }
             if agents.contains(where: { $0.name == "Codex" }),
-                run(root.appendingPathComponent("scripts/install-hooks.sh"), ["--codex"])
+                RepoScripts.run("install-hooks.sh", ["--codex"])
             {
                 done.append("Codex")
             }
-            if !editors.isEmpty,
-                run(root.appendingPathComponent("scripts/install-extension.sh"), [])
-            {
+            if !editors.isEmpty, RepoScripts.run("install-extension.sh") {
                 done.append("editor extension")
             }
 
@@ -159,21 +152,6 @@ struct OnboardingView: View {
         }
     }
 
-    private func run(_ script: URL, _ arguments: [String]) -> Bool {
-        guard FileManager.default.isExecutableFile(atPath: script.path) else { return false }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = [script.path] + arguments
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-            process.waitUntilExit()
-            return process.terminationStatus == 0
-        } catch {
-            return false
-        }
-    }
 }
 
 /// Hosts the first screen. Same shape as the settings window, and for the same reason:

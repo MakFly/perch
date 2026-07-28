@@ -15,7 +15,22 @@ PG_ADMIN_DATABASE="${PERCH_PG_ADMIN_DATABASE:-postgres}"
 PERCH_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PERCH_HOME="$HOME/.perch"
 PERCH_SUPPORT="$HOME/Library/Application Support/Perch"
-PERCH_APP="$PERCH_ROOT/apps/mac/build/Perch.app"
+
+# Where the app is — and these scripts run from two places.
+#
+# In a clone, from `scripts/`, next to the bundle `make-app.sh` builds. In a shipped copy
+# they are inside that bundle, at `Contents/Resources/scripts`, wherever the user dragged
+# it — so the app to wire up is the one two directories above, and deriving it from the
+# repository layout instead would point at a path that does not exist. `PERCH_APP` stays
+# overridable for the case neither guess fits.
+case "$PERCH_ROOT" in
+  */Contents/Resources)
+    PERCH_APP="${PERCH_APP:-$(cd "$PERCH_ROOT/../.." && pwd)}"
+    ;;
+  *)
+    PERCH_APP="${PERCH_APP:-$PERCH_ROOT/apps/mac/build/Perch.app}"
+    ;;
+esac
 
 DATABASE_URL="postgresql://$PG_USER:$PG_PASSWORD@$PG_HOST:$PG_PORT/$PG_DATABASE"
 
