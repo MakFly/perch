@@ -198,17 +198,6 @@ final class AppModel {
         usage.start()
         scenes.start()
 
-        // Muting is a thing you want *while* a machine is being noisy, which is never the
-        // moment to go and find a window; and with no Dock icon and no menu bar item, the
-        // gear is a second way in beside the right-click menu.
-        notch.onIdleIcon = { [weak self] icon in
-            guard let self else { return }
-            switch icon {
-            case .mute: updateSounds(sounds.toggledEnabled)
-            case .settings: showSettings()
-            }
-        }
-
         // The conversation on the cards is only worth keeping current while someone can
         // see it. Closed, this costs nothing at all.
         notch.onPanelVisibilityChanged = { [weak self] isVisible in

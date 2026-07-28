@@ -107,34 +107,7 @@ final class NotchController {
         }
     }
 
-    /// How close the cursor has to come before the resting strip offers its controls.
-    ///
-    /// Generously wide on purpose. The strip changes width when the controls appear, and
-    /// `panelRect` — what clicks are tested against — takes the new width on the frame
-    /// the flag flips while the drawing takes 0.38s to catch up. A margin the cursor
-    /// needs 140pt of travel to cross means that gap is always spent approaching, never
-    /// clicking.
-    private static let proximity = (x: CGFloat(140), y: CGFloat(60))
-
-    /// Whether the cursor is close enough for the resting strip to offer its controls.
-    private(set) var isCursorNear = false
-
-    /// Exactly when the strip draws mute and settings — read by the view to draw them and
-    /// by the click routing to know they are there.
-    ///
-    /// One answer to this, because two would be a gear that can be clicked where none is
-    /// drawn. That was already true with nothing running: the strip is zero wide, drew no
-    /// icons, and a click on the right-hand end of the *cutout* still opened Settings.
-    var showsIdleControls: Bool { state == .idle && idleFlank > 0 && isCursorNear }
-
     private func sampleCursor(clicked: Bool) {
-        // Sampled before anything else, and from the same rect the strip is drawn in: the
-        // controls are what widen it, so the flag has to be current before its own effect
-        // is measured.
-        let near = panelRect.insetBy(dx: -Self.proximity.x, dy: -Self.proximity.y)
-            .contains(NSEvent.mouseLocation)
-        if near != isCursorNear { isCursorNear = near }
-
         // Hysteresis: it takes 6pt more to leave than it took to enter.
         //
         // Without it the boundary is a single line, and a hand resting on it crosses that
@@ -149,22 +122,16 @@ final class NotchController {
         // click here too would toggle it twice.
         if clicked {
             guard inside, state == .idle else { return }
-            // Mute and settings sit at the trailing edge of the resting strip. They cannot
-            // be buttons — the canvas ignores the mouse while idle, which is what lets the
-            // menu bar underneath keep working — so the click is routed here, against the
-            // same rectangles the strip drew them in.
-            let hotspots = IdleStrip.hotspots(
-                in: panelRect, contentHeight: geometry.size.height)
-            let point = NSEvent.mouseLocation
-            if !showsIdleControls {
-                send(.tappedNotch)
-            } else if hotspots.mute.contains(point) {
-                onIdleIcon?(.mute)
-            } else if hotspots.settings.contains(point) {
-                onIdleIcon?(.settings)
-            } else {
-                send(.tappedNotch)
-            }
+            // The whole strip opens the panel, and nothing else.
+            //
+            // It carried a mute and a gear for a while, drawn but not clickable — the
+            // canvas ignores the mouse while idle, which is what lets the menu bar
+            // underneath keep working — so their clicks were routed here against
+            // rectangles computed a second time, in a second file. Two pieces of
+            // arithmetic that had to agree about where a thing was drawn, for two
+            // controls that are one click away inside the panel and in the right-click
+            // menu. The strip is what is running; it is not a toolbar.
+            send(.tappedNotch)
             return
         }
 
@@ -274,10 +241,6 @@ final class NotchController {
     }
 
     // MARK: - Presentation
-
-    /// The two things the resting strip offers besides opening: silence, and settings.
-    enum IdleIcon { case mute, settings }
-    var onIdleIcon: ((IdleIcon) -> Void)?
 
     /// Called when the panel starts or stops being drawn, so work that only matters while
     /// someone is looking — re-reading transcripts — runs then and not the rest of the day.

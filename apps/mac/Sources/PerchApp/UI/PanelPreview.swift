@@ -173,8 +173,7 @@ enum PanelPreview {
                         ? IdleReading(
                             agents: [(.claude, true), (.codex, false)], count: 3, needsYou: true)
                         : IdleReading(agents: [], count: 0, needsYou: false)
-                    let flank = IdleView.flank(
-                        for: reading, quota: busy ? quota : nil, waiting: busy ? 1 : 0)
+                    let flank = IdleView.flank(for: reading, waiting: busy ? 1 : 0)
 
                     ZStack(alignment: .top) {
                         // The cutout, drawn as the hardware would be: nothing may cross it.
@@ -183,8 +182,7 @@ enum PanelPreview {
                             .frame(width: 200 + flank * 2, height: 32)
                         IdleView(
                             reading: reading, notchWidth: 200, notchHeight: 32,
-                            quota: busy ? quota : nil, waiting: busy ? 1 : 0,
-                            isMuted: false, showsIcons: flank > 0)
+                            waiting: busy ? 1 : 0)
                     }
                     .overlay(
                         Rectangle().stroke(Theme.hairline, lineWidth: 1)
@@ -212,7 +210,9 @@ enum PanelPreview {
     /// draws its content on a plain rectangle.
     static func phases() -> some View {
         let notch = CGSize(width: 190, height: 32)
-        let busy = IdleReading(agents: [(.claude, true), (.codex, false)], count: 3, needsYou: true)
+        // Both working, so the stage shows what a fight looks like: the second one turned
+        // around to face the first, and the two hopping off different beats.
+        let busy = IdleReading(agents: [(.claude, true), (.codex, true)], count: 3, needsYou: true)
 
         return VStack(alignment: .leading, spacing: 20) {
             stage("rest · nothing running", size: NotchState.idle.size(notch: notch), painted: false) {
@@ -222,28 +222,14 @@ enum PanelPreview {
             }
 
             stage(
-                "rest · two agents, one request held, cursor away",
+                "rest · two agents fighting, one request held",
                 size: NotchState.idle.size(
-                    notch: notch,
-                    flank: IdleView.flank(for: busy, quota: quota, waiting: 1)),
+                    notch: notch, flank: IdleView.flank(for: busy, waiting: 1)),
                 radius: (12, 8)
             ) {
                 IdleView(
                     reading: busy, notchWidth: notch.width, notchHeight: notch.height,
-                    quota: quota, waiting: 1)
-            }
-
-            stage(
-                "rest · the same, with a hand on its way",
-                size: NotchState.idle.size(
-                    notch: notch,
-                    flank: IdleView.flank(
-                        for: busy, quota: quota, waiting: 1, showsControls: true)),
-                radius: (12, 8)
-            ) {
-                IdleView(
-                    reading: busy, notchWidth: notch.width, notchHeight: notch.height,
-                    quota: quota, waiting: 1, showsIcons: true)
+                    waiting: 1)
             }
 
             stage("flash · a turn ended", size: NotchState.flash.size(notch: notch)) {

@@ -24,6 +24,11 @@ struct AgentGlyph: View {
     /// Off for a session that is not working: a card that has stopped should not keep
     /// pulsing at you from the corner of the screen.
     var isBreathing = true
+    /// Working, on the resting strip: faster, and hopping. Off in the panel, where a row
+    /// of jumping sprites competes with the text you opened it to read.
+    var isFighting = false
+    /// Position in the row — staggers the hop and turns every other one around.
+    var beat: Int = 0
 
     @State private var phase = false
 
@@ -135,7 +140,9 @@ struct AgentGlyph: View {
             if let sheet = Self.sheet(for: agent) {
                 // The animation *is* the breathing here. Pulsing the opacity of something
                 // that already moves reads as a display fault rather than as a heartbeat.
-                AnimatedSprite(sheet: sheet, side: side, isPlaying: isBreathing)
+                AnimatedSprite(
+                    sheet: sheet, side: side, isPlaying: isBreathing,
+                    isFighting: isFighting, beat: beat)
             } else {
                 drawn
                     .opacity(isBreathing && phase ? 0.5 : 1)

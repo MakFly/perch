@@ -117,9 +117,7 @@ struct NotchRootView: View {
     /// The controller needs it too: it is what the cursor is tested against while idle.
     private var idleFlank: CGFloat {
         IdleView.flank(
-            for: IdleReading(model.activity), quota: model.usage.limits,
-            waiting: model.permissions.waitingCount,
-            showsControls: controller.isCursorNear)
+            for: IdleReading(model.activity), waiting: model.permissions.waitingCount)
     }
 
     private var shape: NotchShape {
@@ -146,10 +144,7 @@ struct NotchRootView: View {
                 reading: IdleReading(model.activity),
                 notchWidth: controller.geometry.size.width,
                 notchHeight: controller.geometry.size.height,
-                quota: model.usage.limits,
-                waiting: model.permissions.waitingCount,
-                isMuted: !model.sounds.enabled,
-                showsIcons: controller.showsIdleControls)
+                waiting: model.permissions.waitingCount)
         case .flash:
             if let notice = controller.notice {
                 FlashView(notch: controller.geometry.size, notice: notice)
@@ -355,24 +350,10 @@ struct IdleView: View {
     let reading: IdleReading
     let notchWidth: CGFloat
     let notchHeight: CGFloat
-    /// Read at rest, not only in the panel. A quota you have to open something to see is a
-    /// quota you discover when the next turn is refused — which is the moment it is too
-    /// late to have known.
-    var quota: UsageLimitsReader.Reading?
     /// How many requests are held. Distinct from the amber pill, which says *that* someone
     /// is waiting: this says how many, and four queued approvals is a different afternoon
     /// from one.
     var waiting: Int = 0
-    /// Sounds off, so the speaker can say so rather than lying about it.
-    var isMuted = false
-    /// Only where there is a strip to put them on, and only once a hand is on its way.
-    ///
-    /// With nothing running and no quota the strip is exactly zero wide, and two icons
-    /// floating beside the cutout would undo the one property that state has. The rest of
-    /// the time they are controls, not state: 44pt of menu bar spent on two things you can
-    /// only want while reaching for them. So they arrive with the cursor — see
-    /// `NotchController.showsIdleControls`, which is the one place that decides.
-    var showsIcons = false
 
     private var count: Int { reading.count }
     /// The pill changes colour rather than growing a second badge — at 32pt there is room
@@ -383,26 +364,21 @@ struct IdleView: View {
         HStack(spacing: 0) {
             HStack(spacing: 6) {
                 Spacer(minLength: 0)
-                // Numbers are what you go looking for; the creatures are what you glance
-                // at. So the quota rides in with the cursor, beside the controls.
-                if showsIcons {
-                    UsageLimitsStrip(reading: quota)
-                }
                 HStack(spacing: 3) {
-                    // A sprite plays only for an agent that is doing something: a session
+                    // A sprite fights only for an agent that is doing something: a session
                     // that has stopped holds still, and dims, from the corner of a screen.
-                    ForEach(reading.agents, id: \.agent.rawValue) { entry in
+                    // The index staggers the beat, so a row of them takes turns rather than
+                    // hopping in unison — and turns them to face each other.
+                    ForEach(Array(reading.agents.enumerated()), id: \.element.agent.rawValue) {
+                        index, entry in
                         AgentGlyph(
                             agent: entry.agent, pixel: IdleView.glyphPixel,
-                            isBreathing: entry.isWorking)
+                            isBreathing: entry.isWorking, isFighting: entry.isWorking,
+                            beat: index)
                     }
                 }
             }
-            .frame(
-                width: IdleView.flank(
-                    for: reading, quota: quota, waiting: waiting, showsControls: showsIcons)
-                    - IdleView.inset
-            )
+            .frame(width: IdleView.flank(for: reading, waiting: waiting) - IdleView.inset)
             .padding(.trailing, IdleView.inset)
 
             // The cutout itself: nothing is ever drawn here.
@@ -420,12 +396,6 @@ struct IdleView: View {
                         .padding(.vertical, 1.5)
                         .background(Capsule().fill(Theme.claude))
                 }
-                // Anything the server adds beyond the two everyone has — a per-model
-                // weekly window — goes on this side, where there is room the left has run
-                // out of.
-                if showsIcons {
-                    UsageLimitsStrip(reading: quota, dropFirst: 2, maximum: 1)
-                }
                 if count > 0 {
                     // A pill, not a bare digit: against the menu bar a lone numeral reads
                     // as a glitch, and the fill is what makes it look deliberate.
@@ -440,43 +410,16 @@ struct IdleView: View {
                                 .fill(needsYou ? Theme.warning : Color.white.opacity(0.16)))
                 }
                 Spacer(minLength: 0)
-
-                // Mute and settings, at rest.
-                //
-                // Drawn, not clickable in the SwiftUI sense: the canvas ignores the mouse
-                // while idle, which is what lets the menu bar underneath keep working. The
-                // controller samples the click position it already has and routes it —
-                // `IdleView.hotspots` is the one place the two agree on where these are.
-                if showsIcons {
-                    Image(systemName: isMuted ? "speaker.slash" : "speaker.wave.2")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(isMuted ? Theme.warning : Theme.tertiary)
-                        .frame(width: IdleView.iconSize, height: IdleView.iconSize)
-                        .background(Circle().fill(Theme.hairline))
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(Theme.tertiary)
-                        .frame(width: IdleView.iconSize, height: IdleView.iconSize)
-                        .background(Circle().fill(Theme.hairline))
-                }
             }
-            .frame(
-                width: IdleView.flank(
-                    for: reading, quota: quota, waiting: waiting, showsControls: showsIcons)
-                    - IdleView.inset
-            )
+            .frame(width: IdleView.flank(for: reading, waiting: waiting) - IdleView.inset)
             .padding(.leading, IdleView.inset)
         }
         // The content stays level with the cutout; only the painted shape reaches below it.
         .frame(height: notchHeight, alignment: .center)
     }
 
-    /// Gap between the content and the cutout, on each side. The icon geometry lives in
-    /// `IdleStrip`, where the controller reads the same numbers to route a click.
-    static let inset = IdleStrip.inset
-    static let iconSize = IdleStrip.iconSize
-    static let iconSpacing = IdleStrip.iconSpacing
-    static var iconsWidth: CGFloat { IdleStrip.iconsWidth }
+    /// Gap between the content and the cutout, on each side.
+    static let inset: CGFloat = 5
 
     /// How big a sprite the resting strip carries. Two thirds of the 32pt band: at 20pt a
     /// creature reads as a mark, and at 24 it reads as itself.
@@ -488,10 +431,7 @@ struct IdleView: View {
     /// The inset is part of this number. It was not at first, and the window came out ten
     /// points narrower than what it had to draw — so the count was clipped by the edge it
     /// was supposed to sit inside.
-    static func flank(
-        for reading: IdleReading, quota: UsageLimitsReader.Reading? = nil, waiting: Int = 0,
-        showsControls: Bool = false
-    ) -> CGFloat {
+    static func flank(for reading: IdleReading, waiting: Int = 0) -> CGFloat {
         // Nothing running is nothing drawn, whatever else Perch knows.
         //
         // The quota used to be able to open the strip on its own, which meant a machine
@@ -502,39 +442,13 @@ struct IdleView: View {
 
         // A sprite plus its 3pt gap, with a floor of 24 for the count pill — wide enough
         // for two digits, which is more concurrent sessions than anyone runs.
-        var left = max(CGFloat(reading.agents.count) * AgentGlyph.width(pixel: glyphPixel), 24)
-        var right: CGFloat = 24 + (waiting > 0 ? 26 : 0)
-
-        // The numbers and the two controls ride in together, and only while the cursor is
-        // close enough to be reaching for them.
-        if showsControls {
-            // The two windows every account has go left of the cutout; anything per-model
-            // goes right of it. Each side is measured from what it actually draws.
-            let leftQuota = quotaWidth(quota, dropFirst: 0, maximum: 2)
-            left += leftQuota + (leftQuota > 0 ? 6 : 0)
-            right += quotaWidth(quota, dropFirst: 2, maximum: 1) + iconsWidth + iconSpacing
-        }
+        let left = max(CGFloat(reading.agents.count) * AgentGlyph.width(pixel: glyphPixel), 24)
+        let right: CGFloat = 24 + (waiting > 0 ? 26 : 0)
 
         // Both shoulders are one number — the window is symmetric around the cutout — so
         // the wider side decides. An asymmetric window would centre the notch off the
         // hardware it is drawn around.
         return max(left, right) + inset
-    }
-
-    /// Measured rather than estimated: this sizes a window, and text that is one character
-    /// wider than its window is text with a character missing.
-    private static func quotaWidth(
-        _ reading: UsageLimitsReader.Reading?, dropFirst: Int, maximum: Int
-    ) -> CGFloat {
-        guard let reading, !reading.limits.isEmpty else { return 0 }
-        let windows = reading.limits.windows.dropFirst(dropFirst).prefix(maximum)
-        return windows.reduce(0) { total, window in
-            // The chip as it is actually spelled, not as wide as it could ever be. Sizing
-            // for `100%` would reserve menu bar that says `13%`, and the strip already
-            // animates between widths — a percentage moves every few minutes, not every
-            // frame.
-            total + Theme.monoWidth(UsageLimitsStrip.label(for: window), size: 9) + 8
-        }
     }
 }
 

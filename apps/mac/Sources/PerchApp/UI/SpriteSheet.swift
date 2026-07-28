@@ -36,8 +36,9 @@ struct SpriteSheet {
     /// Which frame belongs to a moment. Driven by the clock rather than by a counter, so
     /// two sprites on screen stay in step with each other and a dropped frame is a frame
     /// skipped rather than an animation running slow.
-    func frame(at date: Date) -> CGImage {
-        let tick = Int((date.timeIntervalSinceReferenceDate * Self.frameRate).rounded(.down))
+    func frame(at date: Date, tempo: Double = 1) -> CGImage {
+        let rate = Self.frameRate * tempo
+        let tick = Int((date.timeIntervalSinceReferenceDate * rate).rounded(.down))
         return frames[((tick % frames.count) + frames.count) % frames.count]
     }
 }
@@ -55,17 +56,56 @@ struct AnimatedSprite: View {
     /// screen for a turn that ended an hour ago says the opposite of the truth.
     let isPlaying: Bool
 
+    /// Working is a fight, and it should look like one.
+    ///
+    /// The sheet on its own is a battle *stance*: the creature breathes and its wings
+    /// idle, which is right for "here" and understated for "this thing has been chewing
+    /// on your repository for twenty minutes". So a working agent plays it half again as
+    /// fast and hops — a short lunge off the floor, then the recovery.
+    var isFighting = false
+
+    /// Which agent this is in the row, which decides two things: when it hops, and which
+    /// way it faces. Staggered, they take turns instead of jumping in unison; mirrored,
+    /// the second one turns to face the first and the strip reads as a brawl rather than
+    /// as a row of stickers.
+    var beat: Int = 0
+
+    /// Half again as fast in a fight. Twice was tested and reads as a fast-forward rather
+    /// than as effort.
+    private var tempo: Double { isFighting ? 1.5 : 1 }
+
     var body: some View {
         Group {
             if isPlaying {
-                TimelineView(.periodic(from: .now, by: 1 / SpriteSheet.frameRate)) { context in
-                    image(sheet.frame(at: context.date))
+                TimelineView(
+                    .periodic(from: .now, by: 1 / (SpriteSheet.frameRate * tempo))
+                ) { context in
+                    image(sheet.frame(at: context.date, tempo: tempo))
+                        // Driven off the same date as the frame rather than by an
+                        // implicit animation: one clock, so the hop cannot drift out of
+                        // step with the wings it belongs to.
+                        .offset(y: -hop(at: context.date))
                 }
             } else {
                 image(sheet.frames[0]).opacity(0.55)
             }
         }
         .frame(width: side, height: side)
+        // Odd ones face back down the row. Only in a fight — a lone sprite, or a resting
+        // one, faces the way it was drawn.
+        .scaleEffect(x: isFighting && beat % 2 == 1 ? -1 : 1)
+    }
+
+    /// A short lunge off the floor, on this sprite's own beat.
+    private func hop(at date: Date) -> CGFloat {
+        guard isFighting else { return 0 }
+        let cycle = 1.3
+        let turn = date.timeIntervalSinceReferenceDate / cycle + Double(beat) * 0.37
+        let phase = turn - turn.rounded(.down)
+        // Airborne for a fifth of the cycle. Any longer and it floats; any shorter and at
+        // fifteen frames a second there are not enough samples left to see it leave.
+        guard phase < 0.2 else { return 0 }
+        return CGFloat(sin(phase / 0.2 * .pi)) * side * 0.12
     }
 
     private func image(_ frame: CGImage) -> some View {
