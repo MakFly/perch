@@ -4,7 +4,11 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "lib": ["ES2023", "DOM"],
-    "types": ["bun"],
+    // `node` as well as `bun`: the same source runs under Bun locally and under Vercel's
+    // Node builder in production, and the builder typechecks what it bundles. Without it
+    // `process.env` is an unknown name there — the build "succeeds", emits a function
+    // nothing routes to, and every API path answers 404 while the site beside it serves.
+    "types": ["bun", "node"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noEmit": true,

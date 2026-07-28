@@ -39,6 +39,11 @@ function day(offset: number): string {
   return toISODate(new Date(start.getTime() + offset * 86_400_000));
 }
 
+async function readJSON(path: string) {
+  const response = await app!.fetch(new Request(`http://local${path}`));
+  return (await response.json()) as any;
+}
+
 async function post(path: string, body: unknown, token?: string) {
   const response = await app!.fetch(
     new Request(`http://local${path}`, {
@@ -86,9 +91,7 @@ suite("postgres", () => {
     expect(published.status).toBe(200);
     expect(published.body.accepted).toBe(1);
 
-    const board = await app!
-      .fetch(new Request(`http://local/v1/leaderboard?board=week&you=${handle}`))
-      .then((response) => response.json());
+    const board = await readJSON(`/v1/leaderboard?board=week&you=${handle}`);
     expect(board.mode).toBe("postgres");
     expect(board.you?.outputTokens).toBe(500);
     expect(board.you?.model).toBe("Opus 5");
@@ -113,9 +116,7 @@ suite("postgres", () => {
     await post("/v1/publish", { days: [row] }, token);
     await post("/v1/publish", { days: [{ ...row, outputTokens: 900 }] }, token);
 
-    const board = await app!
-      .fetch(new Request(`http://local/v1/leaderboard?board=week&you=${handle}-b`))
-      .then((response) => response.json());
+    const board = await readJSON(`/v1/leaderboard?board=week&you=${handle}-b`);
     expect(board.you?.outputTokens).toBe(900);
   });
 
@@ -161,9 +162,7 @@ suite("postgres", () => {
       token,
     );
 
-    const board = await app!
-      .fetch(new Request("http://local/v1/leaderboard?board=week"))
-      .then((response) => response.json());
+    const board = await readJSON("/v1/leaderboard?board=week");
     expect(board.rows.some((row: { handle: string }) => row.handle === `${handle}-d`)).toBe(false);
 
     const profile = await app!.fetch(new Request(`http://local/v1/builders/${handle}-d`));
@@ -171,9 +170,7 @@ suite("postgres", () => {
   });
 
   test("the profile reports a year of cells and the week rank", async () => {
-    const profile = await app!
-      .fetch(new Request(`http://local/v1/builders/${handle}`))
-      .then((response) => response.json());
+    const profile = await readJSON(`/v1/builders/${handle}`);
     expect(profile.activity).toHaveLength(365);
     expect(profile.rank?.position).toBeGreaterThan(0);
   });
@@ -199,9 +196,7 @@ suite("publish is authoritative for its window", () => {
     await post("/v1/publish", { days: [{ ...base, model: "claude-opus-5", outputTokens: 500 }] }, token);
     await post("/v1/publish", { days: [{ ...base, model: "Opus 5", outputTokens: 500 }] }, token);
 
-    const board = await app!
-      .fetch(new Request(`http://local/v1/leaderboard?board=week&you=${handle}-rename`))
-      .then((response) => response.json());
+    const board = await readJSON(`/v1/leaderboard?board=week&you=${handle}-rename`);
     expect(board.you?.outputTokens).toBe(500);
     expect(board.you?.model).toBe("Opus 5");
   });
@@ -225,9 +220,7 @@ suite("publish is authoritative for its window", () => {
     // A later publish that only covers the first day must leave the last one alone.
     await post("/v1/publish", { days: [row(day(0), 111)] }, token);
 
-    const board = await app!
-      .fetch(new Request(`http://local/v1/leaderboard?board=week&you=${handle}-window`))
-      .then((response) => response.json());
+    const board = await readJSON(`/v1/leaderboard?board=week&you=${handle}-window`);
     expect(board.you?.outputTokens).toBe(811);
   });
 });
