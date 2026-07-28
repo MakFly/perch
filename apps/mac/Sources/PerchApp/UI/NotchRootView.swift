@@ -84,7 +84,8 @@ struct NotchRootView: View {
                 // level with the cutout.
                 .padding(
                     .top,
-                    controller.state.hangsBelowTheBezel ? controller.geometry.size.height : 0
+                    controller.state.hangsBelowTheBezel
+                        ? controller.geometry.size.height + NotchState.bodyInset : 0
                 )
                 .padding(.bottom, controller.state.hangsBelowTheBezel ? 12 : 0)
                 // Peek has no controls, so its whole body opens the panel. Expanded does,
@@ -277,6 +278,10 @@ struct PanelHeader<Leading: View, Trailing: View>: View {
             trailing
         }
         .padding(.horizontal, 14)
+        // Tall enough that the tabs and the round buttons sit in a band rather than on a
+        // line: a header the exact height of its own text is one the eye reads as the
+        // first row of the list under it.
+        .frame(height: 26)
     }
 }
 

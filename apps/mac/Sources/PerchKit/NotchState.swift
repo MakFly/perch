@@ -54,11 +54,12 @@ public enum NotchState: String, Equatable, Sendable, CaseIterable {
             // Sized for the band beside the cutout plus three session rows. Wider than it
             // was because the totals now sit level with the hardware, where the room is
             // whatever the cutout does not take.
-            return CGSize(width: max(notch.width + 240, 440), height: notch.height + 82)
+            return CGSize(
+                width: max(notch.width + 240, 440), height: notch.height + Self.bodyInset + 84)
         case .expanded:
-            return CGSize(width: 680, height: 440)
+            return CGSize(width: 680, height: 440 + Self.bodyInset)
         case .alert:
-            return CGSize(width: 520, height: notch.height + 148)
+            return CGSize(width: 520, height: notch.height + Self.bodyInset + 148)
         }
     }
 
@@ -72,6 +73,13 @@ public enum NotchState: String, Equatable, Sendable, CaseIterable {
     /// with room to spill into — curved correctly. The same shape, clipped in one state
     /// and not the other, which is why it read as two different designs.
     public static let shoulder: CGFloat = 12
+
+    /// Air between the bezel line and a panel's first row.
+    ///
+    /// The body starts where the collar flares, and the flare is a curve — so a header
+    /// laid flush against that line is a header with a rounded corner biting into both its
+    /// ends. It read as cropped rather than as the top of something.
+    public static let bodyInset: CGFloat = 10
 
     /// The window's one and only frame.
     ///

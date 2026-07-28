@@ -363,8 +363,9 @@ enum PanelPreview {
                     shape.fill(Theme.surface).opacity(painted ? 1 : 0)
                     shape.stroke(Theme.hairline, lineWidth: 1).opacity(painted ? 1 : 0)
                     content()
-                        // As the panel does: the collar is not part of the body.
-                        .padding(.top, collar.height)
+                        // As the panel does: the collar is not part of the body, and the
+                        // body does not start on the line where it flares.
+                        .padding(.top, collar.height + (collar.height > 0 ? NotchState.bodyInset : 0))
                 }
                 .frame(width: size.width, height: size.height, alignment: .top)
                 // As the panel does. Content taller than its state spills out of a plain
