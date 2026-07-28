@@ -52,6 +52,10 @@ done
 # it must not silently fall back to SF Mono.
 cp -R "$MAC_DIR/Resources/Fonts" "$APP/Contents/Resources/"
 
+# The icon, drawn by Scripts/make-icon.swift and committed rather than generated here: the
+# build should not need AppKit to draw a picture, and the .icns changes about once a year.
+cp "$MAC_DIR/Resources/AppIcon.icns" "$APP/Contents/Resources/"
+
 # Agent sprites, if anyone drops some in. Optional by construction: with this directory
 # absent — which is how the repository ships — AgentGlyph draws its own pixel art and
 # nothing else changes.
@@ -92,6 +96,8 @@ cat >"$APP/Contents/Info.plist" <<'PLIST'
     <string>tech.kweli.perch</string>
     <key>CFBundleExecutable</key>
     <string>Perch</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
