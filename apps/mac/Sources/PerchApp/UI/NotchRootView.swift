@@ -80,9 +80,12 @@ struct NotchRootView: View {
                 .id(controller.state)
                 .transition(Motion.contentSwap)
                 .animation(Motion.content, value: controller.state)
-                // Only the bottom is shared any more. Every state that draws a panel lays
-                // its own top band out through `ShoulderHeader`, and pads its own body —
-                // the strip either side of the cutout is chrome now, not padding.
+                // A panel hangs below the bezel, under the collar; rest and the flash sit
+                // level with the cutout.
+                .padding(
+                    .top,
+                    controller.state.hangsBelowTheBezel ? controller.geometry.size.height : 0
+                )
                 .padding(.bottom, controller.state.hangsBelowTheBezel ? 12 : 0)
                 // Peek has no controls, so its whole body opens the panel. Expanded does,
                 // so it gets no blanket tap — otherwise clicking near a button dismisses
@@ -122,11 +125,19 @@ struct NotchRootView: View {
 
     private var shape: NotchShape {
         guard controller.state == .idle else {
-            // The shoulder is what makes the two top corners meet the menu bar on a curve
+            // The shoulder is what makes the top corners meet the menu bar on a curve
             // instead of a right angle. It reaches past the panel's own edge, so the
             // canvas reserves room for it — see `NotchState.shoulder`, which is where the
             // number lives precisely because two files have to agree on it.
-            return NotchShape(bottomRadius: 18, shoulderRadius: NotchState.shoulder)
+            //
+            // The collar is what keeps the menu bar. A panel that starts full-width at the
+            // top of the screen buries the menus either side of the cutout; this one is
+            // the hardware's width until the bezel and flares out below it.
+            return NotchShape(
+                bottomRadius: 18, shoulderRadius: NotchState.shoulder,
+                collarWidth: controller.geometry.size.width,
+                collarHeight: controller.state.hangsBelowTheBezel
+                    ? controller.geometry.size.height : 0)
         }
         // A painted resting strip carries more corner than an empty one: at 10pt of
         // overhang a 10pt radius is what makes it one shape wrapped around the cutout
@@ -157,7 +168,9 @@ struct NotchRootView: View {
                 tokens: model.usage.today.totalTokens.compactTokens,
                 cost: model.usage.today.cost.compactCost)
         case .expanded:
-            ExpandedView(notch: controller.geometry.size, model: model)
+            ExpandedView(
+                notch: controller.geometry.size, model: model,
+                onClose: { controller.dismiss() })
         case .alert:
             alertContent
         }
@@ -173,7 +186,7 @@ struct NotchRootView: View {
     private var alertContent: some View {
         if let pending = model.permissions.current {
             VStack(alignment: .leading, spacing: 8) {
-                ShoulderHeader(notch: controller.geometry.size) {
+                PanelHeader {
                     AgentGlyph(agent: pending.agent, pixel: 1.5, isBreathing: false)
                     Text(pending.projectName ?? pending.agent.displayName)
                         .font(Theme.mono(10))
@@ -244,40 +257,26 @@ struct NotchRootView: View {
     }
 }
 
-// MARK: - The band the cutout sits in
+// MARK: - The first row of a panel
 
-/// The top band, composed rather than reserved.
+/// What a state is, and what it offers — on one row, under the collar.
 ///
-/// Every state but rest used to begin with `.padding(.top, notchHeight)`: a full-width
-/// strip of black held back for hardware that is only 190pt wide. On a 680pt panel that
-/// threw away two shoulders of 245pt — which is exactly where an island puts its chrome,
-/// and the reason its panels read as wrapped around the cutout rather than hung under it.
-///
-/// So the band is laid out instead: what belongs left of the hardware, the hardware's own
-/// width, and what belongs right of it. The two sides split the remainder evenly, because
-/// the window is centred on the cutout and an asymmetric split would put the tabs and the
-/// quota at different distances from the same edge.
-struct ShoulderHeader<Leading: View, Trailing: View>: View {
-    let notch: CGSize
+/// This lived in the band beside the cutout for a while, which used the 32pt of black the
+/// panel was reserving anyway and looked right in isolation. It was not: that band is the
+/// menu bar, and a 680pt panel drawn across it buries every menu either side of the
+/// hardware. The panel hangs below the bezel now, so its header is a header again — the
+/// difference is that the band above it is no longer part of the panel at all.
+struct PanelHeader<Leading: View, Trailing: View>: View {
     @ViewBuilder var leading: Leading
     @ViewBuilder var trailing: Trailing
 
     var body: some View {
-        HStack(spacing: 0) {
-            HStack(spacing: 6) { leading }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, 14)
-                .padding(.trailing, 8)
-
-            // Nothing is ever drawn here. It is a hole in the screen.
-            Color.clear.frame(width: notch.width)
-
-            HStack(spacing: 6) { trailing }
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.leading, 8)
-                .padding(.trailing, 14)
+        HStack(spacing: 6) {
+            leading
+            Spacer(minLength: 8)
+            trailing
         }
-        .frame(height: notch.height)
+        .padding(.horizontal, 14)
     }
 }
 
@@ -490,7 +489,7 @@ struct PeekView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            ShoulderHeader(notch: notch) {
+            PanelHeader {
                 Text(headline)
                     .font(Theme.mono(10))
                     .foregroundStyle(Theme.secondary)
@@ -583,16 +582,12 @@ private enum Tab: String, CaseIterable {
 private struct ExpandedView: View {
     let notch: CGSize
     let model: AppModel
+    let onClose: () -> Void
     @State private var tab: Tab = .activity
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // The chrome moved into the band the cutout already occupied, which is how the
-            // list got back the 32pt of black above it *and* the row the tabs used to have
-            // below it. The close button did not come along: the band is the panel's own
-            // shape now, so the strip you click to shut it is the thing your eye is on,
-            // and escape still works.
-            ShoulderHeader(notch: notch) {
+            PanelHeader {
                 TabBar(selection: tab) { tab = $0 }
             } trailing: {
                 // Quota lives in the header on every tab: it is the one number you want
@@ -613,6 +608,10 @@ private struct ExpandedView: View {
                 ShoulderButton(symbol: "gearshape", help: t("Settings")) {
                     model.showSettings()
                 }
+
+                // An explicit close, so getting out never depends on finding the collar
+                // or knowing about escape.
+                ShoulderButton(symbol: "xmark", help: t("Close (esc)")) { onClose() }
             }
 
             Group {

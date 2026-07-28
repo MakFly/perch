@@ -46,7 +46,7 @@ struct FlashView: View {
     let notice: NotchFlash
 
     var body: some View {
-        ShoulderHeader(notch: notch) {
+        CutoutBand(notch: notch) {
             Image(systemName: notice.symbol)
                 .font(.system(size: 9, weight: .bold))
                 .foregroundStyle(notice.tint)
@@ -61,5 +61,35 @@ struct FlashView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
+    }
+}
+
+/// Content laid out either side of the hardware, level with it.
+///
+/// Only the flash needs this. Every other panel hangs below the bezel, where the menu bar
+/// is somebody else's — but a flash is two seconds of one line, and putting it under the
+/// bezel would make a notice that has to be *noticed* the only thing on screen that moves
+/// away from where you are looking.
+struct CutoutBand<Leading: View, Trailing: View>: View {
+    let notch: CGSize
+    @ViewBuilder var leading: Leading
+    @ViewBuilder var trailing: Trailing
+
+    var body: some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 6) { leading }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 14)
+                .padding(.trailing, 8)
+
+            // Nothing is ever drawn here. It is a hole in the screen.
+            Color.clear.frame(width: notch.width)
+
+            HStack(spacing: 6) { trailing }
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.leading, 8)
+                .padding(.trailing, 14)
+        }
+        .frame(height: notch.height)
     }
 }

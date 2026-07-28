@@ -238,16 +238,19 @@ enum PanelPreview {
                     notice: .finished(project: "perch", detail: "Prose in a face built for prose"))
             }
 
-            stage("peek · who is running", size: NotchState.peek.size(notch: notch)) {
+            stage("peek · who is running", size: NotchState.peek.size(notch: notch), collar: notch) {
                 PeekView(
                     notch: notch, sessions: [working, unattended, waiting],
                     fallback: "", tokens: "84.2K", cost: "$2.14")
                     .padding(.bottom, 12)
             }
 
-            stage("expanded · tabs and quota in the band", size: NotchState.expanded.size(notch: notch)) {
+            stage(
+                "expanded · the menus either side of the cutout stay put",
+                size: NotchState.expanded.size(notch: notch), collar: notch
+            ) {
                 VStack(alignment: .leading, spacing: 8) {
-                    ShoulderHeader(notch: notch) {
+                    PanelHeader {
                         ForEach(["activity", "stats", "rank"], id: \.self) { tab in
                             Text(tab)
                                 .font(Theme.label(11, .medium))
@@ -262,6 +265,7 @@ enum PanelPreview {
                         UsageLimitsStrip(reading: quota)
                         ShoulderButton(symbol: "speaker.wave.2") {}
                         ShoulderButton(symbol: "gearshape") {}
+                        ShoulderButton(symbol: "xmark") {}
                     }
 
                     VStack(alignment: .leading, spacing: Theme.rowSpacing) {
@@ -273,9 +277,12 @@ enum PanelPreview {
                 .padding(.bottom, 12)
             }
 
-            stage("alert · origin and queue in the band", size: NotchState.alert.size(notch: notch)) {
+            stage(
+                "alert · origin and queue in the header",
+                size: NotchState.alert.size(notch: notch), collar: notch
+            ) {
                 VStack(alignment: .leading, spacing: 8) {
-                    ShoulderHeader(notch: notch) {
+                    PanelHeader {
                         AgentGlyph(agent: .claude, pixel: 1.5, isBreathing: false)
                         Text("perch")
                             .font(Theme.mono(10))
@@ -329,10 +336,13 @@ enum PanelPreview {
     /// corner can be judged. Nothing here clips: the shoulders are drawn *outside* the
     /// panel's rect, and clipping the stage would hide the very defect this is for.
     private static func stage<Content: View>(
-        _ title: String, size: CGSize, radius: (bottom: CGFloat, shoulder: CGFloat) = (18, NotchState.shoulder),
-        painted: Bool = true, @ViewBuilder content: () -> Content
+        _ title: String, size: CGSize,
+        radius: (bottom: CGFloat, shoulder: CGFloat) = (18, NotchState.shoulder),
+        painted: Bool = true, collar: CGSize = .zero, @ViewBuilder content: () -> Content
     ) -> some View {
-        let shape = NotchShape(bottomRadius: radius.bottom, shoulderRadius: radius.shoulder)
+        let shape = NotchShape(
+            bottomRadius: radius.bottom, shoulderRadius: radius.shoulder,
+            collarWidth: collar.width, collarHeight: collar.height)
         return VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(Theme.mono(9))
@@ -353,6 +363,8 @@ enum PanelPreview {
                     shape.fill(Theme.surface).opacity(painted ? 1 : 0)
                     shape.stroke(Theme.hairline, lineWidth: 1).opacity(painted ? 1 : 0)
                     content()
+                        // As the panel does: the collar is not part of the body.
+                        .padding(.top, collar.height)
                 }
                 .frame(width: size.width, height: size.height, alignment: .top)
                 // As the panel does. Content taller than its state spills out of a plain
