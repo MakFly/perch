@@ -18,17 +18,22 @@ export function makeRepo(env: Record<string, string | undefined> = process.env):
   return url ? new PostgresRepo(url) : new DemoRepo();
 }
 
-/** Built once per process: a serverless invocation should not open a pool per request. */
-let cached: ReturnType<typeof createApp> | null = null;
+/**
+ * The app itself, as Vercel's Hono preset expects it: a default-exported `Hono` instance.
+ *
+ * This replaced a hand-wired function in an `api/` directory, and the difference is the
+ * whole story of getting this deployed. That convention wants a filename to encode the
+ * route — `api/[...route].ts` — and in this project it only ever matched a single path
+ * segment, so `/api/x` reached the app and `/api/v1/health` came back as the platform's
+ * own 404. The preset has no filename to get wrong: Vercel routes every request here and
+ * Hono decides, exactly as it does under `bun run dev`.
+ *
+ * Built once per process, so a serverless invocation does not open a database pool per
+ * request.
+ */
+const app = createApp({ repo: makeRepo(), version: VERSION });
 
-export function app() {
-  if (!cached) cached = createApp({ repo: makeRepo(), version: VERSION });
-  return cached;
-}
-
-export default {
-  fetch: (request: Request) => app().fetch(request),
-};
+export default app;
 
 export { createApp } from "./app.js";
 export { DemoRepo } from "./repo/demo.js";
