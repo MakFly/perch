@@ -328,7 +328,11 @@ public struct SessionTracker: Sendable {
         // it can turn ageing off entirely and never lose a long-running session.
         guard !holdsSteady, timeout > 0 else { return }
         let cutoff = now.addingTimeInterval(-timeout)
-        sessions = sessions.filter { $0.value.lastEvent > cutoff }
+        let survivors = sessions.filter { $0.value.lastEvent > cutoff }
+        // Assigning unconditionally would publish a change every time this is called, and
+        // it is now called on a timer — two pointless redraws a minute, forever.
+        guard survivors.count != sessions.count else { return }
+        sessions = survivors
     }
 
     // MARK: - Holding still

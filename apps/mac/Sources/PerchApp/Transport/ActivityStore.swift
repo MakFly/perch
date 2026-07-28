@@ -20,8 +20,25 @@ final class ActivityStore {
     // Observed, not ignored: the session cards redraw when this changes.
     private var tracker = SessionTracker()
 
+    /// Forgetting used to happen only as a side effect of remembering.
+    ///
+    /// `prune` was called from one place — the end of `record` — so the clock that forgets
+    /// a silent session only ticked when *another* session spoke. Which is exactly
+    /// backwards: the moment stale rows pile up is the moment everything has gone quiet,
+    /// and that is precisely when nothing was left to trigger the sweep. Three sessions
+    /// nobody had touched for hours sat in the strip because the machine that was supposed
+    /// to remove them had stopped being asked.
+    ///
+    /// So it is a clock now. Half the interval is nothing next to a 30-minute timeout, and
+    /// the sweep publishes nothing at all unless it actually removed something.
+    @ObservationIgnored private var forgetTimer: Timer?
+
     init() {
         tracker.timeout = preferences.idleTimeout
+        forgetTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) {
+            [weak self] _ in
+            MainActor.assumeIsolated { self?.tracker.prune() }
+        }
     }
 
     /// What is allowed into the panel at all.

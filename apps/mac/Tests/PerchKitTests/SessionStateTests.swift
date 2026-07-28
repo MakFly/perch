@@ -328,3 +328,28 @@ private let epoch = Date(timeIntervalSince1970: 1_700_000_000)
     tracker.record(id: "third", kind: "SessionStart", at: epoch.addingTimeInterval(120))
     #expect(tracker.active.map(\.id) == ["first", "second", "third"])
 }
+
+/// Forgetting used to be a side effect of remembering: `prune` ran at the end of `record`,
+/// so the clock only ticked when another session spoke. The moment stale rows pile up is
+/// the moment everything has gone quiet — exactly when nothing was left to trigger it.
+@Test func aSilentSessionIsForgottenWithoutAnotherOneSpeaking() {
+    var tracker = SessionTracker()
+    tracker.timeout = 30 * 60
+    tracker.record(id: "abandoned", kind: "Stop", at: epoch)
+
+    // Nothing else happens. Ever. The sweep is what has to remove it.
+    tracker.prune(now: epoch.addingTimeInterval(31 * 60))
+    #expect(tracker.active.isEmpty)
+}
+
+/// The sweep runs twice a minute for the life of the process, so it must be silent when it
+/// has nothing to do — otherwise it republishes the whole roster forever.
+@Test func aSweepThatRemovesNothingChangesNothing() {
+    var tracker = SessionTracker()
+    tracker.timeout = 30 * 60
+    tracker.record(id: "busy", kind: "PreToolUse", at: epoch)
+
+    let before = tracker.sessions
+    tracker.prune(now: epoch.addingTimeInterval(60))
+    #expect(tracker.sessions == before)
+}
