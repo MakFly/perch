@@ -5,6 +5,7 @@
     "": {
       "name": "perch",
       "dependencies": {
+        "@hono/node-server": "^1.19.14",
         "drizzle-orm": "^0.44.6",
         "hono": "^4.10.4",
         "postgres": "^3.4.7",

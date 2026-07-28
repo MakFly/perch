@@ -1,31 +1,33 @@
 /**
- * The leaderboard API, as a Vercel function.
+ * The leaderboard API, as a function inside the site's own project.
  *
- * Vercel serves everything in this directory under `/api`, so the Hono app is mounted
- * there rather than at the root — one app, two hosts, no second copy of the routes. The
- * local `bun run dev` in `apps/api` serves the identical app on `:8787` without the
- * prefix, which is what `vercel.json` rewrites `/v1/*` onto so the Mac app can keep asking
- * for `/v1/leaderboard` on either.
+ * One project, one domain, no CORS between the two halves. The static site is the
+ * deployment's output; this handles `/api/*`, and `vercel.json` rewrites `/v1/*` onto it so
+ * the Mac app can ask for `/v1/leaderboard` on the same host.
  *
- * The filename is a **catch-all** and has to be. As `api/index.ts` this function answers
- * `/api` and nothing below it, so every real request — `/api/v1/health` — came back as
- * Vercel's own 404 with no trace of the function having run.
+ * Two things had to be right before this worked at all, and neither was visible locally:
  *
- * Single brackets, not double. `[[...route]]` — the optional catch-all — built into a
- * function locally under CLI 58 and silently produced no function at all on the build
- * machine, which runs 56.5: the deploy went green, the site served, and every API path
- * 404'd. `[...route]` is the form the `api/` directory has always used, and nothing here
- * needs to answer a bare `/api`.
+ *  - `apps/api/tsconfig.json` has to include the `node` types. Vercel's builder typechecks
+ *    what it bundles, and without them `process.env` is an unknown name — the build
+ *    reports success, emits a function, and nothing routes to it.
+ *  - The adapter is `@hono/node-server/vercel`, not `hono/vercel`. The latter returns a
+ *    web-standard `(Request) => Response`, right for Next.js and the Edge runtime and
+ *    wrong here: `@vercel/node` calls the default export with `(req, res)`, so a fetch
+ *    handler simply never writes a response and the request hangs until the timeout.
  */
 
+import { handle } from "@hono/node-server/vercel";
 import { Hono } from "hono";
-import { handle } from "hono/vercel";
 
-import { createApp } from "../apps/api/src/app.js";
+import { createApp } from "../apps/api/src/routes.js";
 import { makeRepo, VERSION } from "../apps/api/src/index.js";
 
 export const config = { runtime: "nodejs" };
 
-const app = new Hono().route("/api", createApp({ repo: makeRepo(), version: VERSION }));
+const api = createApp({ repo: makeRepo(), version: VERSION });
+
+// Mounted at both, because which one arrives depends on whether a rewrite preserved the
+// original path — and matching both costs a line.
+const app = new Hono().route("/api", api).route("/", api);
 
 export default handle(app);
