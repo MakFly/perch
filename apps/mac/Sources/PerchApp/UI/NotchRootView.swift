@@ -445,8 +445,12 @@ struct IdleView: View {
         guard reading.count > 0 else { return 0 }
 
         // A sprite plus its 3pt gap, with a floor of 24 for the count pill — wide enough
-        // for two digits, which is more concurrent sessions than anyone runs.
-        let left = max(CGFloat(reading.agents.count) * AgentGlyph.width(pixel: glyphPixel), 24)
+        // for two digits, which is more concurrent sessions than anyone runs. Plus, once,
+        // the room a flame needs in front of the creature that breathes one: the sprites
+        // are flush against the cutout, so without it the fire is clipped by the shoulder's
+        // own edge on the frame it leaves the mouth.
+        var left = max(CGFloat(reading.agents.count) * AgentGlyph.width(pixel: glyphPixel), 24)
+        if AgentGlyph.breathes(reading.agents.map(\.agent)) { left += AnimatedSprite.muzzleRoom }
         let right: CGFloat = 24 + (waiting > 0 ? 26 : 0)
 
         // Both shoulders are one number — the window is symmetric around the cutout — so

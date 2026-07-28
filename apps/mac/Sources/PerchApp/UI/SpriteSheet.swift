@@ -70,6 +70,25 @@ struct AnimatedSprite: View {
     /// as a row of stickers.
     var beat: Int = 0
 
+    /// A flame out of the mouth, for the one that has one.
+    ///
+    /// Drawn rather than animated from the sheet: the generation-V sprites are a battle
+    /// *stance*, and no frame in any of them opens its jaw. This is ours — three tongues
+    /// of colour on the same clock as everything else, leaving the muzzle where the sprite
+    /// actually has one.
+    var breath: Breath?
+
+    struct Breath: Equatable {
+        /// Where the flame leaves the creature, in unit coordinates of its own box. The
+        /// sprite faces its own left, so this sits near x = 0 and the flame goes further
+        /// left still — see `AgentGlyph.muzzleRoom`, which is what buys it that room.
+        var muzzle: CGPoint
+    }
+
+    /// How far past the sprite's own box a flame reaches. The resting strip adds it to its
+    /// width, once, when there is something on it that breathes.
+    static let muzzleRoom: CGFloat = 9
+
     /// Half again as fast in a fight. Twice was tested and reads as a fast-forward rather
     /// than as effort.
     private var tempo: Double { isFighting ? 1.5 : 1 }
@@ -80,10 +99,17 @@ struct AnimatedSprite: View {
                 TimelineView(
                     .periodic(from: .now, by: 1 / (SpriteSheet.frameRate * tempo))
                 ) { context in
+                    // Everything on this view comes off `context.date` rather than off an
+                    // implicit animation: one clock, so the hop and the flame cannot drift
+                    // out of step with the wings they belong to.
+                    // The flame is attached before the hop, not after: `offset` moves what
+                    // is drawn and not the frame an overlay is measured against, so the
+                    // other order left the fire hanging in the air while the creature
+                    // jumped out from under it.
                     image(sheet.frame(at: context.date, tempo: tempo))
-                        // Driven off the same date as the frame rather than by an
-                        // implicit animation: one clock, so the hop cannot drift out of
-                        // step with the wings it belongs to.
+                        .overlay(alignment: .trailing) {
+                            flame(heat: heat(at: context.date))
+                        }
                         .offset(y: -hop(at: context.date))
                 }
             } else {
@@ -93,7 +119,65 @@ struct AnimatedSprite: View {
         .frame(width: side, height: side)
         // Odd ones face back down the row. Only in a fight — a lone sprite, or a resting
         // one, faces the way it was drawn.
-        .scaleEffect(x: isFighting && beat % 2 == 1 ? -1 : 1)
+        .scaleEffect(x: isFighting && facesForward ? 1 : -1)
+    }
+
+    /// Odd positions turn around. The one that breathes never does: it stands at the left
+    /// of the row with the shoulder's own edge in front of it, and turning it round would
+    /// point the flame at the cutout — the one rectangle on this screen that is not ours
+    /// to draw in.
+    private var facesForward: Bool { breath != nil || beat % 2 == 0 }
+
+    /// Three tongues, brightest and shortest last, growing and retracting inside one
+    /// breath. Drawn past the sprite's own box on the side it faces.
+    @ViewBuilder
+    private func flame(heat: CGFloat) -> some View {
+        if let breath, heat > 0.01 {
+            Canvas { context, size in
+                let origin = CGPoint(
+                    x: AnimatedSprite.muzzleRoom + breath.muzzle.x * side,
+                    y: breath.muzzle.y * side)
+                let reach = heat * (origin.x + side * 0.1)
+                let spread = side * 0.16
+
+                // Red at the edge, amber under it, a near-white core — the order a flame
+                // actually has, and the order the sprite's own tail is drawn in.
+                let tongues: [(CGFloat, CGFloat, Color)] = [
+                    (1, 1, Theme.danger.opacity(0.92)),
+                    (0.66, 0.6, Theme.warning),
+                    (0.3, 0.26, Color(red: 1, green: 0.96, blue: 0.78)),
+                ]
+                for (length, width, colour) in tongues {
+                    var path = Path()
+                    let tip = CGPoint(x: origin.x - reach * length, y: origin.y)
+                    let waist = origin.x - reach * length * 0.45
+                    path.move(to: CGPoint(x: origin.x, y: origin.y - spread * width / 2))
+                    path.addQuadCurve(
+                        to: tip, control: CGPoint(x: waist, y: origin.y - spread * width))
+                    path.addQuadCurve(
+                        to: CGPoint(x: origin.x, y: origin.y + spread * width / 2),
+                        control: CGPoint(x: waist, y: origin.y + spread * width))
+                    path.closeSubpath()
+                    context.fill(path, with: .color(colour))
+                }
+            }
+            .frame(width: side + AnimatedSprite.muzzleRoom, height: side)
+            .allowsHitTesting(false)
+        }
+    }
+
+    /// How much flame there is at a moment: nothing for most of the cycle, then one breath
+    /// that grows and dies. It starts after the hop has landed, so the two read as a
+    /// sequence — leap, land, burn — rather than as one busy thing.
+    private func heat(at date: Date) -> CGFloat {
+        guard isFighting, breath != nil else { return 0 }
+        let turn = date.timeIntervalSinceReferenceDate / 1.3 + Double(beat) * 0.37
+        let phase = turn - turn.rounded(.down)
+        guard phase > 0.34, phase < 0.72 else { return 0 }
+        let within = (phase - 0.34) / 0.38
+        // Out fast, back slowly. A flame that fades symmetrically reads as a light being
+        // dimmed rather than as something being exhaled.
+        return CGFloat(within < 0.3 ? within / 0.3 : 1 - (within - 0.3) / 0.7)
     }
 
     /// A short lunge off the floor, on this sprite's own beat.

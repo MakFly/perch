@@ -24,8 +24,9 @@ struct AgentGlyph: View {
     /// Off for a session that is not working: a card that has stopped should not keep
     /// pulsing at you from the corner of the screen.
     var isBreathing = true
-    /// Working, on the resting strip: faster, and hopping. Off in the panel, where a row
-    /// of jumping sprites competes with the text you opened it to read.
+    /// Working, on the resting strip: faster, hopping, and — for the one with a mouth for
+    /// it — breathing fire. Off in the panel, where a row of jumping sprites competes with
+    /// the text you opened it to read.
     var isFighting = false
     /// Position in the row — staggers the hop and turns every other one around.
     var beat: Int = 0
@@ -135,6 +136,18 @@ struct AgentGlyph: View {
     /// What one costs on the resting strip, gap included.
     static func width(pixel: CGFloat = 2.4) -> CGFloat { pixel * 10 + 3 }
 
+    /// Where a flame leaves this agent, in unit coordinates of its own box — measured off
+    /// the sheet's first frame rather than guessed. Only the fire one has a muzzle.
+    static func breath(for agent: Agent) -> AnimatedSprite.Breath? {
+        agent == .claude ? AnimatedSprite.Breath(muzzle: CGPoint(x: 0.08, y: 0.5)) : nil
+    }
+
+    /// True when the strip has something on it that breathes, and therefore needs the room
+    /// in front of it. Read by `IdleView.flank`, which is what actually buys that room.
+    static func breathes(_ agents: [Agent]) -> Bool {
+        agents.contains { breath(for: $0) != nil }
+    }
+
     var body: some View {
         Group {
             if let sheet = Self.sheet(for: agent) {
@@ -142,7 +155,8 @@ struct AgentGlyph: View {
                 // that already moves reads as a display fault rather than as a heartbeat.
                 AnimatedSprite(
                     sheet: sheet, side: side, isPlaying: isBreathing,
-                    isFighting: isFighting, beat: beat)
+                    isFighting: isFighting, beat: beat,
+                    breath: isFighting ? Self.breath(for: agent) : nil)
             } else {
                 drawn
                     .opacity(isBreathing && phase ? 0.5 : 1)

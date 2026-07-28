@@ -70,8 +70,9 @@ controls — is one hover away, and with nothing running the strip is exactly ze
 doing nothing looks like a Mac doing nothing.
 
 A sprite plays only while that agent is working, and while it works it fights: half again the
-frame rate, a hop off the floor on its own beat, and every other one turned around to face the
-last. A session that has stopped holds its first frame and dims.
+frame rate, a hop off the floor on its own beat, every other one turned around to face the last,
+and — for the one with a mouth for it — a breath of fire between hops. A session that has
+stopped holds its first frame and dims.
 
 Sprites are optional by construction. `AgentGlyph` draws its own 10×10 pixel art — a fire
 lizard, a shelled swimmer, a seed-carrier, owing nobody anything — and that is what the
