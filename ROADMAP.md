@@ -92,6 +92,41 @@ my agents doing".
 - [ ] Click a card to jump (needs M5)
 - [ ] Collapse long session lists behind "show all N sessions"
 
+### M3.7 — the panel reads like a conversation
+
+The reference answers "what did it say", which is the reason to open a notch instead of
+switching to the terminal. This is that gap, closed.
+
+- [x] **The last exchange, on the card.** `Transcript.lastTurn` reads the tail of the file
+      and keeps what is prose: `thinking` is addressed to nobody, `tool_use` is already the
+      activity line, sidechains belong to subagents, and a `user` line carrying a
+      `tool_result` is not a prompt — taking one for a prompt puts a diff where the question
+      belongs. Rendered with headings, bullets and fenced code, because that is what a coding
+      agent writes.
+- [x] **Read off the hook path.** A hook call holds the CLI that made it, so a megabyte read
+      per event would be paid by the agent in the one place this app is built to be
+      skippable. `TranscriptWatcher` polls instead — off the main actor, and only while the
+      panel is on screen.
+- [x] **Clipped and faded, not scrolled.** A scroll view inside a card inside a panel that
+      scrolls takes the wheel away from the panel the moment the cursor crosses a reply.
+      (`ImageRenderer` also cannot lay one out, which is how this was noticed.)
+- [x] **`Writing…` / `Done`** on the exchange, because text that is not moving and an agent
+      that has stopped look identical.
+- [x] **Quota in the resting strip** — the two windows every account has left of the cutout,
+      any per-model weekly window right of it. A quota you have to open a panel to read is a
+      quota you discover when the next turn is refused.
+- [x] **A count of held requests**, beside the session count. The amber pill says *that*
+      something is waiting; four queued approvals and one are a different afternoon.
+- [x] **The strip is measured, not estimated** — `Theme.monoWidth`, from the label the view
+      actually draws. Sizing for the widest a chip could ever be reserved a third more menu
+      bar than it used.
+- [x] **`--render --idle`** draws the resting strip off screen, and `--status` prints the
+      exchange each card would draw. The strip needs Screen Recording to photograph and
+      Accessibility to open — the two permissions this app never asks for.
+- [x] **The jump arrow is on the chip** before the cursor arrives, not on hover.
+- [ ] A reply preview line above the block, for the collapsed card
+- [ ] Per-session jump shortcut
+
 ### M4 — usage the user actually cares about
 
 - [x] Spend per minute / hour / day / month with cost, deduplicated
