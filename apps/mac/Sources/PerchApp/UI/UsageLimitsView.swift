@@ -25,11 +25,13 @@ struct UsageLimitsView: View {
                 ForEach(reading.limits.windows) { window in
                     WindowBar(window: window, showsRemaining: showsRemaining)
                 }
-            } else {
-                Text(emptyMessage)
+            } else if reading?.limits.available == false {
+                Text(t("No plan limits on this account — API key, Bedrock or Vertex."))
                     .font(Theme.mono(9))
                     .foregroundStyle(Theme.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
+            } else {
+                ConnectQuota()
             }
 
             ForEach(remote.keys.sorted(), id: \.self) { host in
@@ -75,11 +77,65 @@ struct UsageLimitsView: View {
         }
     }
 
-    private var emptyMessage: String {
-        if reading?.limits.available == false {
-            return t("No plan limits on this account — API key, Bedrock or Vertex.")
+}
+
+/// The quota's empty state, with the thing that fixes it attached.
+///
+/// It used to read "Run ./scripts/usage-bridge.sh, then restart your sessions" — a panel
+/// hanging off the notch telling you to go and find a terminal. The bridge is one script
+/// and the app can run it, so it offers to.
+///
+/// When the script cannot be reached — a copy dragged out of the DMG has no repository
+/// next to it — the button becomes "copy the command" rather than one that quietly fails.
+private struct ConnectQuota: View {
+    @State private var isWorking = false
+    @State private var outcome: String?
+
+    private var script: URL? { RepoScripts.url(of: "usage-bridge.sh") }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(t("Not connected. Claude Code publishes your plan quota to its statusline, and the bridge reads it there."))
+                .font(Theme.mono(9))
+                .foregroundStyle(Theme.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 6) {
+                if script != nil {
+                    SmallButton(title: isWorking ? t("Connecting…") : t("Connect"), tint: Theme.info) {
+                        connect()
+                    }
+                    .disabled(isWorking)
+                } else {
+                    SmallButton(title: t("Copy the command"), tint: Theme.info) {
+                        RepoScripts.copyToPasteboard(RepoScripts.command(for: "usage-bridge.sh"))
+                        outcome = t("Copied. Run it in the repository, then restart your sessions.")
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+
+            if let outcome {
+                Text(outcome)
+                    .font(Theme.mono(9))
+                    .foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
-        return t("Not connected. Run ./scripts/usage-bridge.sh, then restart your sessions.")
+    }
+
+    private func connect() {
+        isWorking = true
+        outcome = nil
+        Task {
+            let ok = RepoScripts.run("usage-bridge.sh")
+            isWorking = false
+            // The restart is the part everyone misses, so it is the sentence left on screen.
+            outcome =
+                ok
+                ? t("Connected. Restart your open Claude Code sessions — the statusline is read when one starts.")
+                : t("Could not run the bridge. See ./scripts/usage-bridge.sh --status.")
+        }
     }
 }
 

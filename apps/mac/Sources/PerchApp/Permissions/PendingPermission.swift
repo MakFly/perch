@@ -51,13 +51,15 @@ final class PendingPermission: Identifiable {
         _ decision: PermissionDecision,
         reason: String? = nil,
         rule: RememberedRule? = nil,
-        updatedInput: JSONValue? = nil
+        updatedInput: JSONValue? = nil,
+        planMode: PlanMode? = nil
     ) {
         guard !continuations.isEmpty else { return }
         let waiting = continuations
         continuations = []
         let response = PerchResponse(
-            decision: decision, reason: reason, rule: rule, updatedInput: updatedInput)
+            decision: decision, reason: reason, rule: rule, updatedInput: updatedInput,
+            planMode: planMode)
         for continuation in waiting { continuation.resume(returning: response) }
     }
 

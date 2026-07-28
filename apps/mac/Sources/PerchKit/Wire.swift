@@ -241,6 +241,32 @@ public struct RememberedRule: Codable, Sendable, Equatable {
     }
 }
 
+/// How the session should carry on once a plan is approved.
+///
+/// Approving a plan is not a yes/no. Claude Code's own prompt is a choice of mode, and it
+/// applies that choice as a `setMode` entry in `updatedPermissions` — an `allow` naming
+/// none leaves the session in `plan`, where every edit comes back "Cannot call Edit while
+/// in plan mode."
+///
+/// These are the three its prompt offers for continuing in place. `auto` is deliberately
+/// absent: it is gated behind a feature check and a usage-consent prompt the hook cannot
+/// see, and Claude Code falls back to `default` when the gate is off — so a notch button
+/// promising it would be lying about half the time.
+public enum PlanMode: String, Codable, Sendable, CaseIterable {
+    case `default`
+    case acceptEdits
+    case bypassPermissions
+
+    /// Claude Code's own names for the modes, so the button says what the terminal says.
+    public var title: String {
+        switch self {
+        case .default: return "Manual"
+        case .acceptEdits: return "Accept edits"
+        case .bypassPermissions: return "Bypass"
+        }
+    }
+}
+
 /// The app's answer. A `nil` decision means "stay out of the way".
 public struct PerchResponse: Codable, Sendable {
     public var decision: PermissionDecision?
@@ -251,6 +277,8 @@ public struct PerchResponse: Codable, Sendable {
     /// Replaces the tool's input before it runs. This is how an `AskUserQuestion` answer
     /// gets back: the answers ride inside the input the tool is about to receive.
     public var updatedInput: JSONValue?
+    /// Set when the user approved a plan: which mode the session continues in.
+    public var planMode: PlanMode?
     /// Echoed back so the hook can prove it is talking to Perch and not to whatever
     /// process happened to grab the port after a crash. Without this, any local process
     /// could answer `allow` and approve tool calls on the user's behalf.
@@ -273,6 +301,7 @@ public struct PerchResponse: Codable, Sendable {
         status: String? = nil,
         rule: RememberedRule? = nil,
         updatedInput: JSONValue? = nil,
+        planMode: PlanMode? = nil,
         outputB64: String? = nil
     ) {
         self.decision = decision
@@ -281,6 +310,7 @@ public struct PerchResponse: Codable, Sendable {
         self.status = status
         self.rule = rule
         self.updatedInput = updatedInput
+        self.planMode = planMode
         self.outputB64 = outputB64
     }
 
@@ -292,7 +322,7 @@ public struct PerchResponse: Codable, Sendable {
         guard let decision, decision != .ask else { return nil }
         let hookOutput = HookOutput(
             event: event, decision: decision, reason: reason, rule: rule,
-            updatedInput: updatedInput)
+            updatedInput: updatedInput, planMode: planMode)
         return try? JSONEncoder().encode(hookOutput)
     }
 
@@ -311,28 +341,41 @@ public struct PerchResponse: Codable, Sendable {
 /// - `PermissionRequest` → `decision: {behavior: "allow", updatedInput?, updatedPermissions?}`
 ///                              or `{behavior: "deny", message?, interrupt?}`
 /// - `PreToolUse`        → `permissionDecision` / `permissionDecisionReason`
+///
+/// `updatedPermissions` is a list of permission updates. Two of the six shapes are used
+/// here: `addRules` to persist an "Always", and `setMode` to say which mode a session
+/// continues in after a plan is approved.
 public struct HookOutput: Encodable, Sendable {
     public var event: String
     public var decision: PermissionDecision
     public var reason: String?
     /// Only meaningful with `allow`: asks Claude Code to persist the rule itself.
     public var rule: RememberedRule?
-    /// Only meaningful with `allow`: replaces the tool's input before it runs, which is
-    /// how an `AskUserQuestion` answer travels back.
+    /// Only meaningful with `allow`: replaces the tool's input before it runs.
+    ///
+    /// This is how an `AskUserQuestion` answer travels back — and it is also what makes an
+    /// `allow` count at all for `ExitPlanMode`. Both tools declare
+    /// `requiresUserInteraction()`, and for those Claude Code drops an `allow` that
+    /// carries no `updatedInput` and prompts in the terminal as if the hook had said
+    /// nothing: the plan card's Approve button did nothing at all.
     public var updatedInput: JSONValue?
+    /// Only meaningful with `allow`: the mode the session continues in.
+    public var planMode: PlanMode?
 
     public init(
         event: String,
         decision: PermissionDecision,
         reason: String?,
         rule: RememberedRule? = nil,
-        updatedInput: JSONValue? = nil
+        updatedInput: JSONValue? = nil,
+        planMode: PlanMode? = nil
     ) {
         self.event = event
         self.decision = decision
         self.reason = reason
         self.rule = rule
         self.updatedInput = updatedInput
+        self.planMode = planMode
     }
 
     private enum RootKey: String, CodingKey { case hookSpecificOutput }
@@ -347,7 +390,7 @@ public struct HookOutput: Encodable, Sendable {
     }
 
     private enum UpdateKey: String, CodingKey {
-        case type, rules, behavior, destination
+        case type, rules, behavior, destination, mode
     }
 
     private enum RuleKey: String, CodingKey { case toolName, ruleContent }
@@ -374,16 +417,27 @@ public struct HookOutput: Encodable, Sendable {
         case .allow:
             try body.encode("allow", forKey: .behavior)
             try body.encodeIfPresent(updatedInput, forKey: .updatedInput)
-            guard let rule else { return }
+            // An empty list would be a schema violation, so the container is only opened
+            // when there is something to put in it.
+            guard rule != nil || planMode != nil else { return }
             var updates = body.nestedUnkeyedContainer(forKey: .updatedPermissions)
-            var update = updates.nestedContainer(keyedBy: UpdateKey.self)
-            try update.encode("addRules", forKey: .type)
-            try update.encode("allow", forKey: .behavior)
-            try update.encode(rule.destination.rawValue, forKey: .destination)
-            var rules = update.nestedUnkeyedContainer(forKey: .rules)
-            var entry = rules.nestedContainer(keyedBy: RuleKey.self)
-            try entry.encode(rule.toolName, forKey: .toolName)
-            try entry.encodeIfPresent(rule.content, forKey: .ruleContent)
+            if let planMode {
+                var update = updates.nestedContainer(keyedBy: UpdateKey.self)
+                try update.encode("setMode", forKey: .type)
+                try update.encode(planMode.rawValue, forKey: .mode)
+                // Session scope: approving one plan is not a preference to write down.
+                try update.encode("session", forKey: .destination)
+            }
+            if let rule {
+                var update = updates.nestedContainer(keyedBy: UpdateKey.self)
+                try update.encode("addRules", forKey: .type)
+                try update.encode("allow", forKey: .behavior)
+                try update.encode(rule.destination.rawValue, forKey: .destination)
+                var rules = update.nestedUnkeyedContainer(forKey: .rules)
+                var entry = rules.nestedContainer(keyedBy: RuleKey.self)
+                try entry.encode(rule.toolName, forKey: .toolName)
+                try entry.encodeIfPresent(rule.content, forKey: .ruleContent)
+            }
         }
     }
 }

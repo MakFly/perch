@@ -57,9 +57,12 @@ final class PermissionBroker {
         with decision: PermissionDecision,
         reason: String? = nil,
         rule: RememberedRule? = nil,
-        updatedInput: JSONValue? = nil
+        updatedInput: JSONValue? = nil,
+        planMode: PlanMode? = nil
     ) {
-        pending.resolve(decision, reason: reason, rule: rule, updatedInput: updatedInput)
+        pending.resolve(
+            decision, reason: reason, rule: rule, updatedInput: updatedInput,
+            planMode: planMode)
         queue.removeAll { $0.id == pending.id }
     }
 

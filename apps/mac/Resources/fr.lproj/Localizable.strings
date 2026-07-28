@@ -221,3 +221,12 @@
 /* AskUserQuestion — the free-text answer */
 "Other — write your answer" = "Autre — écris ta réponse";
 "…and something else" = "…et autre chose";
+
+/* Plan quota — the empty state that connects itself */
+"Not connected. Claude Code publishes your plan quota to its statusline, and the bridge reads it there." = "Non connecté. Claude Code publie le quota de ton forfait dans sa statusline, et le pont le lit là.";
+"Connect" = "Connecter";
+"Connecting…" = "Connexion…";
+"Copy the command" = "Copier la commande";
+"Copied. Run it in the repository, then restart your sessions." = "Copiée. Lance-la dans le dépôt, puis redémarre tes sessions.";
+"Connected. Restart your open Claude Code sessions — the statusline is read when one starts." = "Connecté. Redémarre tes sessions Claude Code ouvertes — la statusline est lue au démarrage d'une session.";
+"Could not run the bridge. See ./scripts/usage-bridge.sh --status." = "Le pont n'a pas pu être lancé. Voir ./scripts/usage-bridge.sh --status.";

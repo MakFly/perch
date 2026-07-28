@@ -121,6 +121,18 @@ public struct PlanApprovalRequest: Sendable, Equatable {
         guard let plan = toolInput?["plan"]?.stringValue, !plan.isEmpty else { return nil }
         return PlanApprovalRequest(plan: plan)
     }
+
+    /// The `updatedInput` an approval has to carry: the plan, unchanged.
+    ///
+    /// Not a formality. `ExitPlanMode` declares `requiresUserInteraction()`, and for such
+    /// a tool Claude Code discards an `allow` that carries no `updatedInput` — it falls
+    /// through to its own terminal prompt, which is exactly what Approve looked like it
+    /// was doing for nothing. Sending the input back untouched is the honest version:
+    /// Perch approves plans, it does not edit them.
+    public func updatedInput(original: JSONValue?) -> JSONValue {
+        if case .object(let existing)? = original { return .object(existing) }
+        return .object(["plan": .string(plan)])
+    }
 }
 
 /// What kind of card the notch should show for a pending request.

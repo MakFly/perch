@@ -361,6 +361,14 @@ final class AppModel {
     func decide(_ decision: PermissionDecision, remember: Bool = false) {
         guard let pending = permissions.current else { return }
 
+        // A plan cannot be allowed the plain way — see `approvePlan`. `Perch --decide
+        // allow` lands here too, and it approving into a still-blocked session is the
+        // exact bug this routing exists to prevent.
+        if case .plan = pending.kind, decision == .allow {
+            approvePlan(.default)
+            return
+        }
+
         // Claude Code persists the rule itself, through the decision it is already waiting
         // on. Perch writing `settings.local.json` in parallel would race the very process
         // about to rewrite it.
@@ -389,6 +397,26 @@ final class AppModel {
         let updated = request.updatedInput(
             original: pending.request.payload.toolInput, answers: answers)
         permissions.resolve(pending, with: .allow, updatedInput: updated)
+        notch.showAlert(
+            permissions.current != nil, extraHeight: alertExtraHeight,
+            extraWidth: alertExtraWidth)
+    }
+
+    /// Approves a plan, and says which mode the session carries on in.
+    ///
+    /// Two things a plain `allow` was missing, both silent. `ExitPlanMode` requires user
+    /// interaction, so an allow with no `updatedInput` is dropped and Claude Code prompts
+    /// in the terminal instead — the button did nothing. And an approval that names no
+    /// mode leaves the session in `plan`, where the first edit is refused.
+    func approvePlan(_ mode: PlanMode) {
+        guard let pending = permissions.current,
+            case .plan(let request) = pending.kind
+        else { return }
+
+        permissions.resolve(
+            pending, with: .allow,
+            updatedInput: request.updatedInput(original: pending.request.payload.toolInput),
+            planMode: mode)
         notch.showAlert(
             permissions.current != nil, extraHeight: alertExtraHeight,
             extraWidth: alertExtraWidth)
