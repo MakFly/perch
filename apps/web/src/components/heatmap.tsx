@@ -1,7 +1,7 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 
 import type { ActivityDay } from "@/lib/api"
-import { dayLabel, monthLabel, tokens } from "@/lib/format"
+import { dayLabel, dollars, monthLabel, tokens } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 export type HeatmapMode = "daily" | "weekly" | "cumulative"
@@ -21,40 +21,93 @@ interface Props {
 export function Heatmap({ days, mode }: Props) {
   const { weeks, months, thresholds } = useMemo(() => build(days, mode), [days, mode])
 
-  return (
-    <div className="overflow-x-auto pb-1">
-      <div className="min-w-[680px]">
-        <div className="flex gap-[3px]">
-          {weeks.map((week, index) => (
-            <div key={index} className="flex flex-col gap-[3px]">
-              {week.map((cell, row) =>
-                cell ? (
-                  <Cell key={cell.day} cell={cell} thresholds={thresholds} />
-                ) : (
-                  <span key={`pad-${row}`} className="size-[11px]" />
-                ),
-              )}
-            </div>
-          ))}
-        </div>
+  const [hovered, setHovered] = useState<Cell | null>(null)
 
-        {/*
-          Absolutely positioned rather than one label per column: a month name is far wider
-          than the 14px a column occupies, so laid out in flow the labels collide and
-          "juil." runs into "août".
-        */}
-        <div className="relative mt-2 h-4 text-[11px] text-ink-3">
-          {months.map((label) => (
-            <span
-              key={label.text + label.column}
-              className="absolute top-0 whitespace-nowrap"
-              style={{ left: `${label.column * COLUMN_PITCH}px` }}
-            >
-              {label.text}
-            </span>
-          ))}
+  return (
+    <div>
+      <div className="overflow-x-auto pb-1">
+        <div className="min-w-[680px]">
+          <div className="flex gap-[3px]" onMouseLeave={() => setHovered(null)}>
+            {weeks.map((week, index) => (
+              <div key={index} className="flex flex-col gap-[3px]">
+                {week.map((cell, row) =>
+                  cell ? (
+                    <Cell
+                      key={cell.day}
+                      cell={cell}
+                      thresholds={thresholds}
+                      isHovered={hovered?.day === cell.day}
+                      onEnter={setHovered}
+                    />
+                  ) : (
+                    <span key={`pad-${row}`} className="size-[11px]" />
+                  ),
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/*
+            Absolutely positioned rather than one label per column: a month name is far wider
+            than the 14px a column occupies, so laid out in flow the labels collide and
+            "juil." runs into "août".
+          */}
+          <div className="relative mt-2 h-4 text-[11px] text-ink-3">
+            {months.map((label) => (
+              <span
+                key={label.text + label.column}
+                className="absolute top-0 whitespace-nowrap"
+                style={{ left: `${label.column * COLUMN_PITCH}px` }}
+              >
+                {label.text}
+              </span>
+            ))}
+          </div>
         </div>
       </div>
+
+      <Readout cell={hovered} />
+    </div>
+  )
+}
+
+/**
+ * What the hovered day was, on a line of its own under the calendar.
+ *
+ * This replaced a floating tooltip, and the reason is the one the app's own token chart
+ * already recorded: a tooltip that covers the chart it describes makes you move the mouse
+ * to read it. Here it was worse than that — the calendar scrolls horizontally, and
+ * `overflow-x` clips vertically too, so a tooltip anchored above a cell was cut in half by
+ * the very container that lets the year scroll. Nothing to position, nothing to clip.
+ *
+ * Fixed height, so the block below it does not jump when the cursor enters the grid.
+ */
+function Readout({ cell }: { cell: Cell | null }) {
+  return (
+    <div className="mt-3 flex h-5 items-center gap-2 border-t border-line pt-3 text-xs">
+      {cell ? (
+        <>
+          <span className="text-ink">{dayLabel(cell.day)}</span>
+          {cell.tokens > 0 ? (
+            <span className="font-mono tabular text-ink-3">
+              <span className="text-info">{tokens(cell.tokens)}</span> jetons ·{" "}
+              <span className="text-claude">{dollars(cell.costUsd)}</span>
+            </span>
+          ) : (
+            <span className="text-ink-3">aucune activité</span>
+          )}
+        </>
+      ) : (
+        <span className="text-ink-3">Survole un jour pour le détail.</span>
+      )}
+
+      <span className="ml-auto flex items-center gap-1.5 text-ink-3">
+        moins
+        {LEVELS.map((level) => (
+          <span key={level} className={cn("size-[9px] rounded-[2px]", level)} />
+        ))}
+        plus
+      </span>
     </div>
   )
 }
@@ -75,19 +128,52 @@ const COLUMN_PITCH = 14
 /** Columns a month label needs to itself before the next one is allowed to print. */
 const MIN_LABEL_GAP = 3
 
-function Cell({ cell, thresholds }: { cell: Cell; thresholds: number[] }) {
+interface CellProps {
+  cell: Cell
+  thresholds: number[]
+  isHovered: boolean
+  onEnter: (cell: Cell) => void
+}
+
+/**
+ * No `title` attribute.
+ *
+ * The native tooltip takes a second to appear, cannot be styled, and renders a date in the
+ * browser's locale next to a figure formatted in the page's — which on a calendar of three
+ * hundred cells is the difference between something you read and something you wait for.
+ */
+function Cell({ cell, thresholds, isHovered, onEnter }: CellProps) {
   let level = 0
   if (cell.value > 0) {
     level = 1
     for (const threshold of thresholds) if (cell.value >= threshold) level += 1
   }
+  const isActive = cell.tokens > 0
+
   return (
     <span
-      className={cn("size-[11px] rounded-[2px]", LEVELS[Math.min(4, level)])}
-      title={`${dayLabel(cell.day)} — ${tokens(cell.tokens)} jetons`}
+      // Only the days with something on them are announced or reachable by keyboard. The
+      // `title` this replaced was the only thing a screen reader had to go on, so dropping
+      // it without a label would have been a regression — but reading out three hundred
+      // "no activity" squares is not an improvement either.
+      {...(isActive
+        ? {
+            role: "img",
+            tabIndex: 0,
+            "aria-label": `${dayLabel(cell.day)} — ${tokens(cell.tokens)} jetons, ${dollars(cell.costUsd)}`,
+          }
+        : { "aria-hidden": true })}
+      className={cn(
+        "size-[11px] rounded-[2px] transition-shadow outline-none",
+        LEVELS[Math.min(4, level)],
+        isHovered && "ring-1 ring-ink/70",
+      )}
+      onMouseEnter={() => onEnter(cell)}
+      onFocus={() => onEnter(cell)}
     />
   )
 }
+
 
 const LEVELS = [
   "bg-white/[0.05]",
