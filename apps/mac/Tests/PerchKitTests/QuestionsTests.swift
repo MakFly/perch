@@ -99,3 +99,73 @@ private let askInput = toolInput(
     #expect(decision["behavior"] as? String == "allow")
     #expect(answers["Which database?"] as? String == "Postgres")
 }
+
+// MARK: - Free-text answers
+
+/// Every `AskUserQuestion` implicitly offers "none of these" — Claude Code's own prompt
+/// always does. Without it in the notch, the only way to say something the options do not
+/// cover was to leave the notch and type in the terminal, which is what the card exists to
+/// avoid.
+@Suite("Typed answers")
+struct TypedAnswerTests {
+    private func request(multiSelect: Bool) -> AskUserQuestionRequest {
+        AskUserQuestionRequest(questions: [
+            AskQuestion(
+                question: "Which database?",
+                header: "DB",
+                multiSelect: multiSelect,
+                options: [
+                    .init(label: "Postgres", description: ""),
+                    .init(label: "SQLite", description: ""),
+                ])
+        ])
+    }
+
+    @Test("a typed answer replaces the picked option when only one may be chosen")
+    func singleSelectReplaces() {
+        let merged = request(multiSelect: false).merged(
+            picked: ["Which database?": ["Postgres"]],
+            typed: ["Which database?": "Neon, actually"])
+        #expect(merged["Which database?"] == ["Neon, actually"])
+    }
+
+    @Test("a typed answer joins the picked ones when several may be chosen")
+    func multiSelectAppends() {
+        let merged = request(multiSelect: true).merged(
+            picked: ["Which database?": ["Postgres"]],
+            typed: ["Which database?": "and Redis"])
+        #expect(merged["Which database?"] == ["Postgres", "and Redis"])
+    }
+
+    @Test("whitespace is not an answer")
+    func blankTypedIsIgnored() {
+        let merged = request(multiSelect: false).merged(
+            picked: ["Which database?": ["Postgres"]],
+            typed: ["Which database?": "   \n "])
+        #expect(merged["Which database?"] == ["Postgres"])
+    }
+
+    @Test("typing alone answers the question, so submit becomes reachable")
+    func typedAloneCompletes() {
+        let request = request(multiSelect: false)
+        #expect(!request.isComplete([:]))
+        let merged = request.merged(picked: [:], typed: ["Which database?": "Neon"])
+        #expect(request.isComplete(merged))
+    }
+
+    @Test("the same text is not appended twice")
+    func multiSelectDoesNotDuplicate() {
+        let merged = request(multiSelect: true).merged(
+            picked: ["Which database?": ["Redis"]],
+            typed: ["Which database?": "Redis"])
+        #expect(merged["Which database?"] == ["Redis"])
+    }
+
+    @Test("a typed answer travels back in updatedInput like any other")
+    func typedReachesTheWire() {
+        let request = request(multiSelect: false)
+        let merged = request.merged(picked: [:], typed: ["Which database?": "Neon"])
+        let updated = request.updatedInput(original: nil, answers: merged)
+        #expect(updated["answers"]?["Which database?"]?.stringValue == "Neon")
+    }
+}

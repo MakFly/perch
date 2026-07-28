@@ -12,3 +12,7 @@ apps/api/.env
 
 # Local runtime
 *.perch-backup
+
+# Vercel
+.vercel
+.env*

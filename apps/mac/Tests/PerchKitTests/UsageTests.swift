@@ -255,3 +255,90 @@ private func sampleEvent(id: String, request: String = "r1", tokens: Int = 100) 
 
     #expect(try indexer.indexAll().eventsInserted == 1)
 }
+
+// MARK: - Daily aggregates, for the leaderboard
+
+/// The board publishes one row per day and model, so the store has to group by both — and
+/// group in *local* time, because "today" means the user's today and a board that rolls
+/// over at UTC midnight would move someone's work to the wrong day.
+@Test func dailyAggregatesGroupByDayAndModel() throws {
+    let (store, url) = try makeStore()
+    defer { try? FileManager.default.removeItem(at: url) }
+
+    let calendar = Calendar.current
+    let noon = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: .now)!
+    let alsoNoon = noon.addingTimeInterval(120)
+    let yesterday = calendar.date(byAdding: .day, value: -1, to: noon)!
+
+    try store.insert([
+        UsageEvent(
+            messageId: "m1", requestId: "r1", timestamp: noon, model: "opus",
+            inputTokens: 10, outputTokens: 100, cacheReadTokens: 0,
+            cacheWrite5mTokens: 0, cacheWrite1hTokens: 0, sessionId: "s1"),
+        UsageEvent(
+            messageId: "m2", requestId: "r2", timestamp: alsoNoon, model: "opus",
+            inputTokens: 5, outputTokens: 50, cacheReadTokens: 0,
+            cacheWrite5mTokens: 0, cacheWrite1hTokens: 0, sessionId: "s1"),
+        UsageEvent(
+            messageId: "m3", requestId: "r3", timestamp: noon, model: "sonnet",
+            inputTokens: 1, outputTokens: 7, cacheReadTokens: 0,
+            cacheWrite5mTokens: 0, cacheWrite1hTokens: 0, sessionId: "s2"),
+        UsageEvent(
+            messageId: "m4", requestId: "r4", timestamp: yesterday, model: "opus",
+            inputTokens: 1, outputTokens: 1, cacheReadTokens: 0,
+            cacheWrite5mTokens: 0, cacheWrite1hTokens: 0, sessionId: "s3"),
+    ])
+
+    let rows = try store.dailyByModel()
+    #expect(rows.count == 3)
+
+    let today = ISO8601DateFormatter.localDay(noon)
+    let opusToday = try #require(rows.first { $0.day == today && $0.model == "opus" })
+    #expect(opusToday.outputTokens == 150)
+    #expect(opusToday.inputTokens == 15)
+
+    // Two sessions today, and one yesterday — counted distinctly, not summed per event.
+    let activity = try store.dailyActivity()
+    let todayActivity = try #require(activity.first { $0.day == today })
+    #expect(todayActivity.sessions == 2)
+}
+
+/// Focus is evidence, not wall time: minutes in which something was produced. Two events a
+/// couple of minutes apart are two active minutes, not the span between them.
+@Test func focusCountsActiveMinutesRatherThanElapsedTime() throws {
+    let (store, url) = try makeStore()
+    defer { try? FileManager.default.removeItem(at: url) }
+
+    let calendar = Calendar.current
+    let start = calendar.date(bySettingHour: 9, minute: 0, second: 0, of: .now)!
+
+    try store.insert([
+        UsageEvent(
+            messageId: "a", requestId: "r", timestamp: start, model: "opus",
+            inputTokens: 0, outputTokens: 1, cacheReadTokens: 0,
+            cacheWrite5mTokens: 0, cacheWrite1hTokens: 0, sessionId: "s"),
+        // Same minute: one minute of work, not two.
+        UsageEvent(
+            messageId: "b", requestId: "r", timestamp: start.addingTimeInterval(20),
+            model: "opus", inputTokens: 0, outputTokens: 1, cacheReadTokens: 0,
+            cacheWrite5mTokens: 0, cacheWrite1hTokens: 0, sessionId: "s"),
+        // Three hours later. Wall time would say 3h; the agent worked for two minutes.
+        UsageEvent(
+            messageId: "c", requestId: "r", timestamp: start.addingTimeInterval(10_800),
+            model: "opus", inputTokens: 0, outputTokens: 1, cacheReadTokens: 0,
+            cacheWrite5mTokens: 0, cacheWrite1hTokens: 0, sessionId: "s"),
+    ])
+
+    let activity = try store.dailyActivity()
+    #expect(activity.count == 1)
+    #expect(activity[0].focusSeconds == 120)
+}
+
+extension ISO8601DateFormatter {
+    /// `YYYY-MM-DD` in the local zone, which is how the store labels a day.
+    static func localDay(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
+}

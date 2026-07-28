@@ -176,6 +176,27 @@ final class UsageModel {
         for event in watcher.events(for: reading.limits) { onQuotaEvent?(event) }
     }
 
+    /// The daily counters the leaderboard publishes, read off the main actor.
+    ///
+    /// A window rather than everything: the server upserts on `(builder, day, model)`, so
+    /// re-sending recent days repairs a day that was indexed late and costs nothing, while
+    /// restating years of history on every publish would be kilobytes to say what has not
+    /// changed.
+    ///
+    /// Returns nil when the index failed to open — which is the case where publishing
+    /// zeroes would look like a quiet week rather than a broken install.
+    func publishPayload(windowDays: Int) async -> Leaderboard.PublishPayload? {
+        guard let store else { return nil }
+        let since = Calendar.current.date(byAdding: .day, value: -windowDays, to: .now)
+
+        return await Task.detached(priority: .utility) { () -> Leaderboard.PublishPayload? in
+            guard let models = try? store.dailyByModel(since: since),
+                let activity = try? store.dailyActivity(since: since)
+            else { return nil }
+            return Leaderboard.payload(models: models, activity: activity)
+        }.value
+    }
+
     /// Aggregates, read off the main actor.
     ///
     /// These are four SQLite queries over a table with tens of thousands of rows. Running

@@ -186,3 +186,38 @@
 "Claude Code" = "Claude Code";
 "Notify me when a turn ends somewhere I cannot see" = "Me prévenir quand un tour se termine hors de ma vue";
 "A macOS notification, silent — Perch already owns the sound. It stays quiet in a quiet scene, during quiet hours, and while you are looking at the terminal that raised it. Clicking it jumps there." = "Une notification macOS, muette — le son reste géré par Perch. Elle se tait pendant une scène silencieuse, pendant les heures calmes, et tant que tu regardes le terminal concerné. Un clic t'y emmène.";
+
+/* Leaderboard — the rank tab */
+"demo data" = "données de démo";
+"publishing…" = "publication…";
+"loading…" = "chargement…";
+"Previous week" = "Semaine précédente";
+"Next week" = "Semaine suivante";
+"Nobody published this week. Yours will be the first." = "Personne n'a publié cette semaine. Tu seras le premier.";
+"Reading the board…" = "Lecture du classement…";
+"Publish now" = "Publier maintenant";
+"My profile" = "Mon profil";
+"published %@" = "publié %@";
+"Compare your output with other developers. Counters only — never a prompt, a path or a project name." = "Compare ta production à celle d'autres développeurs. Des compteurs, uniquement — jamais un prompt, un chemin ni un nom de projet.";
+"handle" = "pseudo";
+"team (optional)" = "équipe (facultatif)";
+"Public" = "Public";
+"Unlisted" = "Non listé";
+"Joining…" = "Inscription…";
+"Join" = "Rejoindre";
+"You will publish as %@" = "Tu publieras sous %@";
+"The leaderboard needs a licence." = "Le classement nécessite une licence.";
+"Approving, denying and answering never do — those always work." = "Approuver, refuser et répondre n'en ont jamais besoin — ça marche toujours.";
+
+/* Stats */
+"by model, today" = "par modèle, aujourd'hui";
+
+/* Onboarding */
+"Here is what Perch found on this Mac. Nothing below is a choice — one button sets up everything listed." = "Voici ce que Perch a trouvé sur ce Mac. Rien ci-dessous n'est un choix — un seul bouton configure tout ce qui est listé.";
+"ready" = "prêt";
+"will be set up" = "sera configuré";
+"nothing to do" = "rien à faire";
+
+/* AskUserQuestion — the free-text answer */
+"Other — write your answer" = "Autre — écris ta réponse";
+"…and something else" = "…et autre chose";

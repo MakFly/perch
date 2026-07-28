@@ -80,6 +80,37 @@ public struct AskUserQuestionRequest: Sendable, Equatable {
     public func isComplete(_ answers: [String: [String]]) -> Bool {
         questions.allSatisfy { !(answers[$0.question] ?? []).isEmpty }
     }
+
+    /// Picked options, plus anything typed into the free-text field.
+    ///
+    /// Every `AskUserQuestion` carries an implicit "none of these" — Claude Code's own
+    /// prompt always offers one, and the answer people actually want to give is often not
+    /// on the list. The notch showed the options and nothing else, so the only way to say
+    /// something else was to leave the notch and answer in the terminal, which is the one
+    /// thing this card exists to avoid.
+    ///
+    /// Single-select **replaces**: an option and a typed answer are alternatives, not a
+    /// list of two. Multi-select **appends**, because there the list is the point.
+    public func merged(
+        picked: [String: [String]],
+        typed: [String: String]
+    ) -> [String: [String]] {
+        var answers = picked
+        for question in questions {
+            let text = (typed[question.question] ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+
+            if question.multiSelect {
+                var current = answers[question.question] ?? []
+                if !current.contains(text) { current.append(text) }
+                answers[question.question] = current
+            } else {
+                answers[question.question] = [text]
+            }
+        }
+        return answers
+    }
 }
 
 /// `ExitPlanMode`: approve the plan, or send back what to change.

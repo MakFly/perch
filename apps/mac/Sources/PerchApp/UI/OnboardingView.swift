@@ -28,8 +28,11 @@ struct OnboardingView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(t("Approve Claude Code from the notch"))
                     .font(.title2).bold()
-                Text(t("Here is what Perch found on this Mac."))
+                // Says outright that the list is a report. Without this line the rows read
+                // as a form, and the first thing anyone does is try to tick one.
+                Text(t("Here is what Perch found on this Mac. Nothing below is a choice — one button sets up everything listed."))
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if agents.isEmpty {
@@ -74,25 +77,43 @@ struct OnboardingView: View {
                         Text(tool.evidence).font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    if tool.isConfigured == true {
-                        Text(t("ready")).font(.caption).foregroundStyle(.green)
-                    }
+                    Text(status(for: tool))
+                        .font(.caption)
+                        .foregroundStyle(colour(for: tool))
                 }
             }
         }
     }
 
+    /// Deliberately not `circle`.
+    ///
+    /// An empty circle at the head of a list row is the shape of an unselected radio
+    /// button, so that is what people take it for — the first thing anyone did with this
+    /// screen was try to click one. These are three *states*, and none of them is a
+    /// control: the only control on the screen is the button at the bottom.
     private func symbol(for tool: DetectedTool) -> String {
         switch tool.isConfigured {
         case true: return "checkmark.circle.fill"
-        case false: return "circle"
-        // Terminals need nothing installed, so an empty circle would imply work to do.
+        case false: return "arrow.down.circle"
+        // Terminals need nothing installed, so anything implying work to do would be a lie.
         case nil: return "checkmark.circle"
         }
     }
 
+    private func status(for tool: DetectedTool) -> String {
+        switch tool.isConfigured {
+        case true: return t("ready")
+        case false: return t("will be set up")
+        case nil: return t("nothing to do")
+        }
+    }
+
     private func colour(for tool: DetectedTool) -> Color {
-        tool.isConfigured == true ? .green : .secondary
+        switch tool.isConfigured {
+        case true: return .green
+        case false: return .accentColor
+        case nil: return .secondary
+        }
     }
 
     /// Runs the same scripts the README documents rather than reimplementing them in

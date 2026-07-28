@@ -15,6 +15,7 @@ final class AppModel {
     let scenes = SceneMonitor()
     let license = LicenseModel()
     let updates = UpdateChecker()
+    let leaderboard = LeaderboardModel()
 
     /// Whether Perch is allowed to take the screen right now, and make a noise doing it.
     private(set) var quiet = QuietSettings.load()
@@ -341,9 +342,11 @@ final class AppModel {
     private func extraHeight(for kind: RequestKind) -> CGFloat {
         switch kind {
         case .question(let request):
-            // Room for the question, its options, and the controls under them.
+            // Room for the question, its options, the free-text field under them, and the
+            // controls. The field is 34pt of box plus the spacing above it — a card that
+            // scrolls to reach its own answer is a card nobody answers.
             let options = request.questions.map(\.options.count).max() ?? 2
-            return CGFloat(options) * 44 + 40
+            return CGFloat(options) * 44 + 40 + 43
         case .plan:
             // A plan gets the screen. It is the longest thing Perch shows, the one with
             // the most consequence behind the button, and it was being read through a

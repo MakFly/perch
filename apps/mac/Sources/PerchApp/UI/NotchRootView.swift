@@ -453,13 +453,19 @@ private struct ExpandedView: View {
                         next.showsRemainingQuota.toggle()
                         model.updatePreferences(next)
                     })
-            case .rank: RankPlaceholder()
+            case .rank: RankView(model: model)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         // Opening the panel is the moment to catch up on plans that moved while Perch was
-        // not running, or while a session sat quiet.
-        .onAppear { model.tasks.refreshAll(model.activity.activeSessions.map(\.id)) }
+        // not running, or while a session sat quiet — but *after* it has finished opening.
+        // Reading transcripts on the frame the morph starts is work competing with the
+        // spring for the same 0.38s.
+        .task {
+            try? await Task.sleep(for: .milliseconds(420))
+            guard !Task.isCancelled else { return }
+            model.tasks.refreshAll(model.activity.activeSessions.map(\.id))
+        }
     }
 }
 
@@ -649,16 +655,3 @@ private struct EventRow: View {
     }
 }
 
-private struct RankPlaceholder: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(t("Leaderboard"))
-                .font(Theme.label(11))
-                .foregroundStyle(Theme.secondary)
-            Text(t("Opt in to compare your usage with other developers."))
-                .font(Theme.mono(10))
-                .foregroundStyle(Theme.tertiary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-}
