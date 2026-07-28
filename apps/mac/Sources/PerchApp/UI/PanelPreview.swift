@@ -183,7 +183,8 @@ enum PanelPreview {
                             .frame(width: 200 + flank * 2, height: 32)
                         IdleView(
                             reading: reading, notchWidth: 200, notchHeight: 32,
-                            quota: busy ? quota : nil, waiting: busy ? 1 : 0)
+                            quota: busy ? quota : nil, waiting: busy ? 1 : 0,
+                            isMuted: false, showsIcons: flank > 0)
                     }
                     .overlay(
                         Rectangle().stroke(Theme.hairline, lineWidth: 1)

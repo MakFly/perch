@@ -121,7 +121,21 @@ final class NotchController {
         // takes events, the strip is a real tap target and SwiftUI owns it — handling the
         // click here too would toggle it twice.
         if clicked {
-            if inside, state == .idle { send(.tappedNotch) }
+            guard inside, state == .idle else { return }
+            // Mute and settings sit at the trailing edge of the resting strip. They cannot
+            // be buttons — the canvas ignores the mouse while idle, which is what lets the
+            // menu bar underneath keep working — so the click is routed here, against the
+            // same rectangles the strip drew them in.
+            let hotspots = IdleStrip.hotspots(
+                in: panelRect, contentHeight: geometry.size.height)
+            let point = NSEvent.mouseLocation
+            if hotspots.mute.contains(point) {
+                onIdleIcon?(.mute)
+            } else if hotspots.settings.contains(point) {
+                onIdleIcon?(.settings)
+            } else {
+                send(.tappedNotch)
+            }
             return
         }
 
@@ -218,6 +232,10 @@ final class NotchController {
     }
 
     // MARK: - Presentation
+
+    /// The two things the resting strip offers besides opening: silence, and settings.
+    enum IdleIcon { case mute, settings }
+    var onIdleIcon: ((IdleIcon) -> Void)?
 
     /// Called when the panel starts or stops being drawn, so work that only matters while
     /// someone is looking — re-reading transcripts — runs then and not the rest of the day.

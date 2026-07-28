@@ -137,7 +137,9 @@ struct NotchRootView: View {
                 notchWidth: controller.geometry.size.width,
                 notchHeight: controller.geometry.size.height,
                 quota: model.usage.limits,
-                waiting: model.permissions.waitingCount)
+                waiting: model.permissions.waitingCount,
+                isMuted: !model.sounds.enabled,
+                showsIcons: idleFlank > 0)
         case .peek:
             PeekView(activity: model.activity, usage: model.usage)
         case .expanded:
@@ -258,6 +260,12 @@ struct IdleView: View {
     /// is waiting: this says how many, and four queued approvals is a different afternoon
     /// from one.
     var waiting: Int = 0
+    /// Sounds off, so the speaker can say so rather than lying about it.
+    var isMuted = false
+    /// Only where there is a strip to put them on. With nothing running and no quota the
+    /// strip is exactly zero wide, and two icons floating beside the cutout would undo the
+    /// one property that state has.
+    var showsIcons = false
 
     private var count: Int { reading.count }
     /// The pill changes colour rather than growing a second badge — at 32pt there is room
@@ -316,6 +324,25 @@ struct IdleView: View {
                                 .fill(needsYou ? Theme.warning : Color.white.opacity(0.16)))
                 }
                 Spacer(minLength: 0)
+
+                // Mute and settings, at rest.
+                //
+                // Drawn, not clickable in the SwiftUI sense: the canvas ignores the mouse
+                // while idle, which is what lets the menu bar underneath keep working. The
+                // controller samples the click position it already has and routes it —
+                // `IdleView.hotspots` is the one place the two agree on where these are.
+                if showsIcons {
+                    Image(systemName: isMuted ? "speaker.slash" : "speaker.wave.2")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(isMuted ? Theme.warning : Theme.tertiary)
+                        .frame(width: IdleView.iconSize, height: IdleView.iconSize)
+                        .background(Circle().fill(Theme.hairline))
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Theme.tertiary)
+                        .frame(width: IdleView.iconSize, height: IdleView.iconSize)
+                        .background(Circle().fill(Theme.hairline))
+                }
             }
             .frame(
                 width: IdleView.flank(for: reading, quota: quota, waiting: waiting)
@@ -327,8 +354,12 @@ struct IdleView: View {
         .frame(height: notchHeight, alignment: .center)
     }
 
-    /// Gap between the content and the cutout, on each side.
-    static let inset: CGFloat = 5
+    /// Gap between the content and the cutout, on each side. The icon geometry lives in
+    /// `IdleStrip`, where the controller reads the same numbers to route a click.
+    static let inset = IdleStrip.inset
+    static let iconSize = IdleStrip.iconSize
+    static let iconSpacing = IdleStrip.iconSpacing
+    static var iconsWidth: CGFloat { IdleStrip.iconsWidth }
 
     /// Sized to the content: one agent must not reserve room for four, and an empty strip
     /// must be exactly zero wide or it paints black shoulders beside the notch.
@@ -349,7 +380,10 @@ struct IdleView: View {
         // enough for two digits, which is more concurrent sessions than anyone runs.
         let glyphs = reading.count == 0 ? 0 : max(CGFloat(reading.agents.count) * 19, 24)
         let left = leftQuota + (leftQuota > 0 && glyphs > 0 ? 6 : 0) + glyphs
-        let right = rightQuota + (reading.count > 0 ? 24 : 0) + (waiting > 0 ? 26 : 0)
+        var right = rightQuota + (reading.count > 0 ? 24 : 0) + (waiting > 0 ? 26 : 0)
+        // The icons are only drawn when there is a strip to draw them on, which is exactly
+        // when this function returns something other than zero.
+        right += iconsWidth + iconSpacing
 
         // Both shoulders are one number — the window is symmetric around the cutout — so
         // the wider side decides. An asymmetric window would centre the notch off the

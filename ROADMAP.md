@@ -124,6 +124,13 @@ switching to the terminal. This is that gap, closed.
       exchange each card would draw. The strip needs Screen Recording to photograph and
       Accessibility to open — the two permissions this app never asks for.
 - [x] **The jump arrow is on the chip** before the cursor arrives, not on hover.
+- [x] **Mute and settings on the resting strip.** They cannot be buttons: the canvas ignores
+      the mouse while idle, which is what stops Perch's window answering for every click in
+      the top of the screen and lets the menu bar underneath keep working. The controller
+      already samples the cursor for hover, so it routes the click against `IdleStrip`'s
+      rectangles instead — and that arithmetic is in `PerchKit`, tested, because the picture
+      and the target are computed in two different files and a gear drawn 5pt from where it
+      can be clicked is worse than no gear.
 - [ ] A reply preview line above the block, for the collapsed card
 - [ ] Per-session jump shortcut
 
