@@ -186,7 +186,14 @@ struct SessionCardView: View {
             Chip(text: session.agent.displayName, tint: agentTint)
             if let terminal = session.client?.displayName {
                 // Tinted while hovered: the chip is the thing that says where you land.
-                Chip(text: terminal, tint: isHovered && plan.isPossible ? Theme.info : nil)
+                //
+                // The arrow is on it whenever a jump is possible, not only on hover. That
+                // the card is clickable was discoverable by hovering it, which is to say by
+                // already suspecting it — the affordance has to be visible before the
+                // cursor arrives, or it is not an affordance.
+                Chip(
+                    text: plan.isPossible ? "\(terminal) ↗" : terminal,
+                    tint: isHovered && plan.isPossible ? Theme.info : nil)
             }
 
             Text(age)

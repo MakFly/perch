@@ -68,6 +68,7 @@ enum PanelPreview {
             subagents: subagents, startedAt: Date.now.addingTimeInterval(-age))
         snapshot.prompt = prompt
         snapshot.aiTitle = title
+        snapshot.client = ClientInfo(terminal: "ghostty")
         snapshot.agent = agent
         snapshot.permissionMode = mode
         return snapshot

@@ -149,6 +149,19 @@ final class AppModel {
         }
     }
 
+    /// Reads a session's last turn for `--status`, synchronously — this is a one-shot CLI
+    /// answer, not the panel's polling path.
+    private func readTurn(for session: SessionSnapshot) -> TranscriptTurn? {
+        session.turn ?? session.transcriptPath.flatMap { Transcript.lastTurn(path: $0) }
+    }
+
+    /// One line, however many the original had.
+    private func one(_ text: String) -> String {
+        let flat = text.replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "  ", with: " ")
+        return flat.count > 96 ? String(flat.prefix(96)) + "…" : flat
+    }
+
     /// One pass: read every live session's transcript off the main actor, then publish.
     private func refreshTranscripts() async {
         let paths = activity.transcriptPaths
@@ -684,6 +697,17 @@ final class AppModel {
             lines.append(
                 "  \(session.id.prefix(8))  \(session.agent.displayName)\(mode)  \(project)  [\(session.status.rawValue)]  “\(session.title)”  \(session.lastDetail)\(subagents)\(plan)  · \(jump)"
             )
+            // The exchange the card draws, from the transcript on disk. The panel cannot be
+            // photographed from a terminal, so this is where "the reader works on real
+            // data" is checked — the rendered image only ever proves the layout.
+            if let turn = readTurn(for: session) {
+                if let prompt = turn.prompt {
+                    lines.append("      you   \(one(prompt))")
+                }
+                if !turn.reply.isEmpty {
+                    lines.append("      says  \(one(turn.reply))")
+                }
+            }
         }
         usage.reloadLimits()
         if let reading = usage.limits, !reading.limits.isEmpty {
