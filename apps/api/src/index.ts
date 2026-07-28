@@ -1,3 +1,5 @@
+import { Hono } from "hono";
+
 import { createApp } from "./routes.js";
 import { DemoRepo } from "./repo/demo.js";
 import { PostgresRepo } from "./repo/postgres.js";
@@ -30,8 +32,12 @@ export function makeRepo(env: Record<string, string | undefined> = process.env):
  *
  * Built once per process, so a serverless invocation does not open a database pool per
  * request.
+ *
+ * `Hono` is imported and used here rather than only in `routes.ts` because that is how the
+ * builder finds this file: it refuses a deployment with "no entrypoint found which imports
+ * hono", and an entry that only imports a factory does not qualify.
  */
-const app = createApp({ repo: makeRepo(), version: VERSION });
+const app = new Hono().route("/", createApp({ repo: makeRepo(), version: VERSION }));
 
 export default app;
 
