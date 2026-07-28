@@ -3,8 +3,8 @@
 #   • push a tag `v0.2.0`  → a GitHub Release with Perch-0.2.0.dmg attached
 #   • Actions › Run workflow → the same DMG as a downloadable artifact
 #
-# Deliberately not on every push: this repository is private, where a macOS runner minute
-# is billed at ten times a Linux one, and a DMG per commit is not worth that.
+# Deliberately not on every push: a universal release build is minutes of macOS runner, and
+# a DMG per commit is nobody's idea of a useful artifact.
 #
 # The build is ad-hoc signed. No Developer ID certificate lives in this repository, and
 # `release.sh --build` says so rather than producing something that merely looks signed —
