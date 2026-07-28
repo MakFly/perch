@@ -260,3 +260,37 @@ private let epoch = Date(timeIntervalSince1970: 1_700_000_000)
     session.permissionMode = "plan"
     #expect(!session.permissionIsPermissive)
 }
+
+/// The panel is a list you read while it updates, so its order has to be one that does not
+/// move. Sorting by the last event meant every tool call in any session promoted that card
+/// to the top — six agents reshuffled the list several times a second.
+@Test func theOrderDoesNotMoveWhenSomethingHappens() {
+    var tracker = SessionTracker()
+    tracker.record(id: "first", kind: "SessionStart", at: epoch)
+    tracker.record(id: "second", kind: "SessionStart", at: epoch.addingTimeInterval(60))
+    tracker.record(id: "third", kind: "SessionStart", at: epoch.addingTimeInterval(120))
+
+    let order = tracker.active.map(\.id)
+    #expect(order == ["third", "second", "first"])
+
+    // The oldest session does something. It stays exactly where it was.
+    tracker.record(id: "first", kind: "PreToolUse", at: epoch.addingTimeInterval(300))
+    #expect(tracker.active.map(\.id) == order)
+
+    // So does a turn ending, which is the other event that used to move a card.
+    tracker.record(id: "third", kind: "Stop", at: epoch.addingTimeInterval(360))
+    #expect(tracker.active.map(\.id) == order)
+}
+
+/// Two sessions started in the same instant would otherwise be ordered by whatever the
+/// dictionary felt like that frame — the same bug, in miniature.
+@Test func sessionsStartedTogetherStillHaveAFixedOrder() {
+    var tracker = SessionTracker()
+    tracker.record(id: "a", kind: "SessionStart", at: epoch)
+    tracker.record(id: "b", kind: "SessionStart", at: epoch)
+
+    let order = tracker.active.map(\.id)
+    for _ in 0..<20 {
+        #expect(tracker.active.map(\.id) == order)
+    }
+}

@@ -331,8 +331,26 @@ public struct SessionTracker: Sendable {
         sessions = sessions.filter { $0.value.lastEvent > cutoff }
     }
 
+    /// Every live session, in an order that does not move.
+    ///
+    /// This was `lastEvent` descending — most recently active first — which sounds right
+    /// and is unusable the moment more than one agent is running. Every tool call in any
+    /// session promotes that card to the top and pushes the others down, so with six
+    /// agents the list reshuffles several times a second: the card you are reading slides
+    /// away, the one you were about to click moves out from under the cursor, and ⌃⌥P
+    /// cycles in a different order on every press because the switcher indexes into this
+    /// array.
+    ///
+    /// A session's start time never changes, so this order never changes. A card appears
+    /// at the top when its session starts and keeps its place until it ends. Which one is
+    /// busy, and which one wants you, is the dot's job — not the row's.
+    ///
+    /// The id breaks ties: two sessions started in the same instant would otherwise be
+    /// ordered by whatever the dictionary felt like, which is the same bug in miniature.
     public var active: [SessionSnapshot] {
-        sessions.values.sorted { $0.lastEvent > $1.lastEvent }
+        sessions.values.sorted {
+            ($0.startedAt, $0.id) > ($1.startedAt, $1.id)
+        }
     }
 
     public var workingCount: Int {
