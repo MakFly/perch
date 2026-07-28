@@ -225,6 +225,15 @@ enum Diagnostics {
     }
 
     /// Opens the settings window of the instance that is already running.
+    /// `Perch --reveal` opens the panel of the running instance.
+    static func reveal() -> Int32 {
+        var payload = ClaudeHookPayload()
+        payload.message = "reveal"
+        return send(event: Wire.decideEvent, payload: payload) { _, status in
+            print(status ?? "(no response)")
+        }
+    }
+
     static func settings() -> Int32 {
         var payload = ClaudeHookPayload()
         payload.message = "settings"

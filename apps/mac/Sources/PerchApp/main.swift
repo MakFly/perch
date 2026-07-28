@@ -45,6 +45,10 @@ if CommandLine.arguments.contains("--update") {
     exit(Diagnostics.update(install: CommandLine.arguments.contains("--install")))
 }
 
+if CommandLine.arguments.contains("--reveal") {
+    exit(Diagnostics.reveal())
+}
+
 if CommandLine.arguments.contains("--settings") {
     exit(Diagnostics.settings())
 }

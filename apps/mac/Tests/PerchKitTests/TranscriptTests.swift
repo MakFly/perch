@@ -110,6 +110,21 @@ struct TranscriptTests {
         #expect(turn?.prompt == "reach parity")
     }
 
+    @Test("a message that is only scaffolding is not a prompt at all")
+    func scaffoldingOnlyIsNotAPrompt() {
+        // A finished subagent posts one of these back into the conversation. The card read
+        // it as the question the user had asked, and printed a tool-use id.
+        let turn = Transcript.turn(in: [
+            user("what changed?"),
+            assistant([["type": "text", "text": "Two files."]]),
+            user("<task-notification><task-id>aa4f8891</task-id></task-notification>"),
+            assistant([["type": "text", "text": "The subagent finished."]]),
+        ])
+
+        #expect(turn?.prompt == "what changed?")
+        #expect(turn?.reply == "Two files.\n\nThe subagent finished.")
+    }
+
     @Test("a window that opens mid-turn still shows the reply it can see")
     func replyWithoutItsPrompt() {
         // Reading the tail of a megabyte file lands mid-turn; the prompt is then simply

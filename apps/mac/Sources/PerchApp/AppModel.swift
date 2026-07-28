@@ -512,6 +512,14 @@ final class AppModel {
             return PerchResponse(status: "direct quota: \(summary)")
         }
 
+        // Opening the panel is otherwise a hover, which needs a synthetic mouse and so
+        // Accessibility. This is the only way to exercise what the panel starts when it
+        // appears — the transcript polling — from a terminal.
+        if raw == "reveal" {
+            notch.reveal()
+            return PerchResponse(status: "panel revealed")
+        }
+
         if raw == "settings" {
             let visible = showSettings()
             return PerchResponse(
@@ -701,8 +709,11 @@ final class AppModel {
             // photographed from a terminal, so this is where "the reader works on real
             // data" is checked — the rendered image only ever proves the layout.
             if let turn = readTurn(for: session) {
+                // Which of the two paths produced it: `live` means the watcher published it
+                // while the panel was open, `read` means this command went to the file.
+                let source = session.turn == nil ? "read" : "live"
                 if let prompt = turn.prompt {
-                    lines.append("      you   \(one(prompt))")
+                    lines.append("      you   [\(source)] \(one(prompt))")
                 }
                 if !turn.reply.isEmpty {
                     lines.append("      says  \(one(turn.reply))")

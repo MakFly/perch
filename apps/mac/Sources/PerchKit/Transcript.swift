@@ -112,14 +112,23 @@ public enum Transcript {
     /// the plumbing.
     private static func clean(_ text: String) -> String? {
         var result = text
-        for tag in ["command-name", "command-message", "command-args", "local-command-stdout"] {
+        for tag in injected {
             result = result.replacingOccurrences(
                 of: "<\(tag)>[\\s\\S]*?</\(tag)>", with: "", options: .regularExpression)
         }
-        result = result.replacingOccurrences(
-            of: "<system-reminder>[\\s\\S]*?</system-reminder>", with: "",
-            options: .regularExpression)
         let trimmed = result.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }
+
+    /// Wrappers Claude Code puts into the conversation that no one typed: slash-command
+    /// scaffolding, reminders it writes to itself, and the notifications a finished subagent
+    /// posts back. A card showing one of these says the user asked for
+    /// `<task-notification><task-id>aa4f…` — which was on screen before this list grew.
+    ///
+    /// A message that is nothing but scaffolding comes back empty, and empty means the card
+    /// falls back to the prompt the hook carried.
+    private static let injected = [
+        "command-name", "command-message", "command-args", "local-command-stdout",
+        "system-reminder", "task-notification", "user-prompt-submit-hook",
+    ]
 }
