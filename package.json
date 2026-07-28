@@ -1,0 +1,19 @@
+{
+  "name": "perch",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Perch — notch panel for Claude Code and Codex, plus its public leaderboard.",
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "bun run --cwd apps/web dev",
+    "dev:api": "bun run --cwd apps/api dev",
+    "build": "bun run --cwd apps/web build",
+    "test": "bun run --cwd apps/api test"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}

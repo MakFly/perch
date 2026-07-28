@@ -83,34 +83,38 @@ struct StatsView: View {
     @ViewBuilder
     private var models: some View {
         if !usage.byModel.isEmpty {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("by model, today")
+            VStack(alignment: .leading, spacing: 5) {
+                Text(t("by model, today"))
                     .font(Theme.mono(9))
                     .foregroundStyle(Theme.tertiary)
 
                 ForEach(usage.byModel.prefix(4), id: \.model) { entry in
                     HStack(spacing: 8) {
-                        Text(shortModelName(entry.model))
+                        Text(ModelName.display(entry.model))
                             .font(Theme.mono(10))
                             .foregroundStyle(Theme.secondary)
-                        Spacer()
+                            .lineLimit(1)
+                        Spacer(minLength: 8)
+                        // Both numeric columns are fixed width, so they line up row to
+                        // row. With only the cost pinned, the token figures drifted with
+                        // the length of the model name beside them — which is the one
+                        // thing a column of numbers must not do.
                         Text(entry.tokens.compactTokens)
                             .font(Theme.mono(10))
                             .foregroundStyle(Theme.primary)
+                            .frame(width: 60, alignment: .trailing)
                         Text(entry.cost.compactCost)
                             .font(Theme.mono(10))
                             .foregroundStyle(Theme.active)
-                            .frame(width: 56, alignment: .trailing)
+                            .frame(width: 60, alignment: .trailing)
                     }
+                    .monospacedDigit()
                 }
             }
         }
     }
 
     /// `claude-opus-4-8` reads better as `opus-4-8` in a 680pt panel.
-    private func shortModelName(_ model: String) -> String {
-        model.hasPrefix("claude-") ? String(model.dropFirst("claude-".count)) : model
-    }
 }
 
 private struct GranularityPicker: View {
@@ -182,6 +186,33 @@ private struct TokenBars: View {
 
     private var peak: Int { max(buckets.map(\.tokens).max() ?? 1, 1) }
 
+    /// What the bars are actually drawn against.
+    ///
+    /// Not the peak. The newest bucket is the one still growing, so it becomes the peak
+    /// every few seconds — and scaling against it made *every other bar* shrink on every
+    /// refresh. The chart looked alive and said nothing. Rounding up to the next 1 / 2 / 5
+    /// × 10ⁿ gives a ceiling that only moves when the data crosses a magnitude step, so
+    /// the silhouette holds still between one turn and the next.
+    private var ceiling: Int {
+        let magnitude = pow(10, floor(log10(Double(peak))))
+        for step in [1.0, 2.0, 5.0, 10.0] where Double(peak) <= step * magnitude {
+            return Int(step * magnitude)
+        }
+        return peak
+    }
+
+    /// The bucket that is still being written to — the last one, by construction.
+    private var current: UsageStore.Bucket.ID? { buckets.last?.id }
+
+    /// Which column a horizontal position falls in. Clamped rather than optional: the
+    /// cursor is inside the chart or the phase is `.ended`, and a nil in between would
+    /// blink the readout off at the edges.
+    private func bucket(at x: CGFloat, across width: CGFloat) -> UsageStore.Bucket.ID? {
+        guard !buckets.isEmpty, width > 0 else { return nil }
+        let index = Int(x / (width / CGFloat(buckets.count)))
+        return buckets[min(max(index, 0), buckets.count - 1)].id
+    }
+
     private var focused: UsageStore.Bucket? {
         hovered.flatMap { id in buckets.first { $0.id == id } }
     }
@@ -195,13 +226,25 @@ private struct TokenBars: View {
                             .fill(fill(for: bucket))
                             .frame(height: height(for: bucket, in: proxy.size.height))
                             .frame(maxWidth: .infinity)
-                            // The whole column is the target, not the bar: a quiet bucket
-                            // is two points tall and would be unhittable otherwise.
                             .frame(maxHeight: .infinity, alignment: .bottom)
-                            .contentShape(Rectangle())
-                            .onHover { inside in
-                                hovered = inside ? bucket.id : (hovered == bucket.id ? nil : hovered)
-                            }
+                    }
+                }
+                // One hover region for the whole chart, not one per bar.
+                //
+                // `onHover` on each bar meant up to sixty NSTrackingAreas, torn down and
+                // reinstalled on every layout pass — and the panel spends 0.38s laying
+                // itself out on a spring every time it opens. That is what made the
+                // opening stutter. The column under the cursor is arithmetic, so one
+                // region does the same job for a sixtieth of the cost, and it also fixes
+                // moving fast between bars: the old pairwise enter/exit could leave the
+                // highlight on a bar the cursor had already left.
+                .contentShape(Rectangle())
+                .onContinuousHover(coordinateSpace: .local) { phase in
+                    switch phase {
+                    case .active(let location):
+                        hovered = bucket(at: location.x, across: proxy.size.width)
+                    case .ended:
+                        hovered = nil
                     }
                 }
             }
@@ -234,14 +277,19 @@ private struct TokenBars: View {
         }
     }
 
+    /// Green marks *now*, not the maximum.
+    ///
+    /// Colouring the tallest bar meant the highlight hopped to a different bucket whenever
+    /// the ranking changed, which is movement that carries no news. The live bucket never
+    /// moves — it is always the one on the right — and it is the one you are looking for.
     private func fill(for bucket: UsageStore.Bucket) -> Color {
         if bucket.id == hovered { return Theme.primary }
-        return bucket.tokens == peak ? Theme.active : Theme.info.opacity(0.55)
+        return bucket.id == current ? Theme.active : Theme.info.opacity(0.55)
     }
 
     /// Bars keep a 2pt floor so an active-but-quiet bucket is still visible.
     private func height(for bucket: UsageStore.Bucket, in available: CGFloat) -> CGFloat {
-        let ratio = Double(bucket.tokens) / Double(peak)
+        let ratio = Double(bucket.tokens) / Double(ceiling)
         return max(2, available * ratio)
     }
 }

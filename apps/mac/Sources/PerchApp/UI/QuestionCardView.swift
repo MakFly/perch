@@ -13,10 +13,18 @@ struct QuestionCardView: View {
     let cancel: () -> Void
 
     @State private var answers: [String: [String]] = [:]
+    /// What was typed rather than picked, keyed by question.
+    @State private var typed: [String: String] = [:]
     @State private var index = 0
 
     private var question: AskQuestion? {
         request.questions.indices.contains(index) ? request.questions[index] : nil
+    }
+
+    /// Picked plus typed — what actually gets submitted, and what "is this answered yet"
+    /// is judged against.
+    private var effective: [String: [String]] {
+        request.merged(picked: answers, typed: typed)
     }
 
     var body: some View {
@@ -29,6 +37,7 @@ struct QuestionCardView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 options(for: question)
+                otherField(for: question)
             }
             controls
         }
@@ -79,6 +88,36 @@ struct QuestionCardView: View {
         }
     }
 
+    /// The free-text answer — the "none of these" every question implicitly has.
+    ///
+    /// Without it the only way to say something the options do not cover was to leave the
+    /// notch and type in the terminal, which defeats the card.
+    private func otherField(for question: AskQuestion) -> some View {
+        TextField(
+            question.multiSelect ? t("…and something else") : t("Other — write your answer"),
+            text: Binding(
+                get: { typed[question.question] ?? "" },
+                set: { typed[question.question] = $0 })
+        )
+        .textFieldStyle(.plain)
+        .font(Theme.mono(10))
+        .foregroundStyle(Theme.primary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(RoundedRectangle(cornerRadius: 6).fill(Theme.raised.opacity(0.6)))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(
+                    hasTyped(question) ? Theme.active.opacity(0.5) : Theme.hairline,
+                    lineWidth: 1)
+        )
+        // Enter submits, the way it does in the terminal prompt this replaces.
+        .onSubmit {
+            guard request.isComplete(effective) else { return }
+            if index < request.questions.count - 1 { index += 1 } else { submit(effective) }
+        }
+    }
+
     private var controls: some View {
         HStack(spacing: 6) {
             if index > 0 {
@@ -91,26 +130,39 @@ struct QuestionCardView: View {
 
             if index < request.questions.count - 1 {
                 SmallButton(title: t("Next"), tint: Theme.info) { index += 1 }
-                    .disabled(selected(question).isEmpty)
+                    .disabled(effective[question?.question ?? ""]?.isEmpty ?? true)
             } else {
                 SmallButton(
                     title: request.questions.count > 1 ? t("Submit all") : t("Submit"),
                     tint: Theme.active
                 ) {
-                    submit(answers)
+                    submit(effective)
                 }
-                .disabled(!request.isComplete(answers))
+                .disabled(!request.isComplete(effective))
             }
         }
     }
 
+    private func hasTyped(_ question: AskQuestion) -> Bool {
+        !(typed[question.question] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// What the option rows draw as picked.
+    ///
+    /// For a single-select question, typing hides the option tick: the two are alternatives
+    /// and showing both selected would misrepresent what is about to be submitted.
     private func selected(_ question: AskQuestion?) -> [String] {
         guard let question else { return [] }
+        if !question.multiSelect && hasTyped(question) { return [] }
         return answers[question.question] ?? []
     }
 
     /// Single-select replaces; multi-select accumulates and can be unpicked.
     private func toggle(_ label: String, in question: AskQuestion) {
+        // Picking an option in a single-select question retracts anything typed — the
+        // click is the more recent statement of intent.
+        if !question.multiSelect { typed[question.question] = "" }
+
         var current = answers[question.question] ?? []
         if question.multiSelect {
             if let existing = current.firstIndex(of: label) {

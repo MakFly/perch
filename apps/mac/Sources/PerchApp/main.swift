@@ -72,6 +72,10 @@ if let index = CommandLine.arguments.firstIndex(of: "--answer") {
     exit(Diagnostics.answer(labels))
 }
 
+if let index = CommandLine.arguments.firstIndex(of: "--rank") {
+    exit(LeaderboardCLI.run(Array(CommandLine.arguments.dropFirst(index + 1))))
+}
+
 if let index = CommandLine.arguments.firstIndex(of: "--decide") {
     let decision = CommandLine.arguments.count > index + 1 ? CommandLine.arguments[index + 1] : ""
     exit(Diagnostics.decide(decision, remember: CommandLine.arguments.contains("--remember")))

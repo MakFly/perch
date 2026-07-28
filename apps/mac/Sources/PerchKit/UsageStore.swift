@@ -1,7 +1,19 @@
 import Foundation
 
 /// Persistent index of token usage, keyed so that re-reading a transcript is harmless.
-public final class UsageStore {
+///
+/// **Sendable, deliberately unchecked.** Aggregates are read off the main actor — four
+/// SQLite queries over tens of thousands of rows made the notch miss hover events when
+/// they ran on it — so the store is handed to a detached task on every reload. That was
+/// already true before this conformance existed; the conformance only stops it being an
+/// accident.
+///
+/// It is sound because the connection is opened with `sqlite3_open`, and the SQLite that
+/// ships with macOS is built `SQLITE_THREADSAFE=1` (serialized): the library takes its own
+/// mutex per call, so one connection used from several threads is a supported
+/// configuration rather than a race that has not happened yet. Anything here that stops
+/// being a single connection has to revisit this.
+public final class UsageStore: @unchecked Sendable {
     public enum Granularity: String, Sendable, CaseIterable {
         case minute, hour, day, month
 
@@ -207,6 +219,79 @@ public final class UsageStore {
             buckets.append(Bucket(label: label, tokens: row.int(1), cost: row.double(2)))
         }
         return buckets.reversed()
+    }
+
+    /// One row per local day and model — the shape the leaderboard is published in.
+    public struct DailyModelUsage: Sendable, Equatable {
+        public var day: String
+        public var model: String
+        public var inputTokens: Int
+        public var outputTokens: Int
+        public var cacheReadTokens: Int
+        public var cacheWriteTokens: Int
+        public var cost: Double
+    }
+
+    /// What a day looked like, independent of which models were used in it.
+    public struct DailyActivity: Sendable, Equatable {
+        public var day: String
+        /// Minutes in which *something* was produced, times 60.
+        ///
+        /// Perch has no clock on the user; it has evidence of work. A minute with a usage
+        /// event in it is a minute the agent was running, and counting those is a claim
+        /// that can be checked. Wall time between the first and last event of a day would
+        /// count lunch.
+        public var focusSeconds: Int
+        public var sessions: Int
+    }
+
+    public func dailyByModel(since: Date? = nil) throws -> [DailyModelUsage] {
+        var rows: [DailyModelUsage] = []
+        let clause = since.map { "WHERE ts >= \(Int($0.timeIntervalSince1970))" } ?? ""
+        try database.query(
+            """
+            SELECT strftime('%Y-%m-%d', ts, 'unixepoch', 'localtime') AS day,
+                   model,
+                   SUM(input), SUM(output), SUM(cache_read),
+                   SUM(cache_write_5m) + SUM(cache_write_1h),
+                   SUM(cost)
+            FROM usage_event \(clause)
+            GROUP BY day, model
+            ORDER BY day ASC
+            """
+        ) { row in
+            guard let day = row.string(0) else { return }
+            rows.append(
+                DailyModelUsage(
+                    day: day,
+                    model: row.string(1) ?? "?",
+                    inputTokens: row.int(2),
+                    outputTokens: row.int(3),
+                    cacheReadTokens: row.int(4),
+                    cacheWriteTokens: row.int(5),
+                    cost: row.double(6)))
+        }
+        return rows
+    }
+
+    public func dailyActivity(since: Date? = nil) throws -> [DailyActivity] {
+        var rows: [DailyActivity] = []
+        let clause = since.map { "WHERE ts >= \(Int($0.timeIntervalSince1970))" } ?? ""
+        try database.query(
+            """
+            SELECT strftime('%Y-%m-%d', ts, 'unixepoch', 'localtime') AS day,
+                   COUNT(DISTINCT strftime('%Y-%m-%d %H:%M', ts, 'unixepoch', 'localtime')),
+                   COUNT(DISTINCT session_id)
+            FROM usage_event \(clause)
+            GROUP BY day
+            ORDER BY day ASC
+            """
+        ) { row in
+            guard let day = row.string(0) else { return }
+            rows.append(
+                DailyActivity(day: day, focusSeconds: row.int(1) * 60, sessions: row.int(2)))
+        }
+        return rows
     }
 
     public func totalsByModel(since: Date? = nil) throws -> [(model: String, tokens: Int, cost: Double)] {
