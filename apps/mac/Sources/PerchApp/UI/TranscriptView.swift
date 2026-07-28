@@ -32,8 +32,8 @@ struct TranscriptView: View {
                         .font(Theme.mono(9, .semibold))
                         .foregroundStyle(Theme.tertiary)
                     Text(prompt)
-                        .font(Theme.mono(9))
-                        .foregroundStyle(Theme.secondary)
+                        .font(Theme.prose(11))
+                        .foregroundStyle(Theme.primary)
                         .lineLimit(2)
                         .truncationMode(.tail)
                     Spacer(minLength: 6)
@@ -41,8 +41,8 @@ struct TranscriptView: View {
                         .font(Theme.mono(9))
                         .foregroundStyle(isFinished ? Theme.tertiary : Theme.active)
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 7)
                 .background(Theme.hairline.opacity(0.5))
             }
 
@@ -53,19 +53,22 @@ struct TranscriptView: View {
                 // and the fade say "there is more" without competing for the gesture; the
                 // card is one click from the terminal that has all of it.
                 MarkdownText(turn.reply)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 8)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .frame(maxHeight: 132, alignment: .top)
                     .clipped()
                 // A reply that fills the box has to look like it continues, or a cut-off
                 // sentence reads as the agent having stopped mid-word.
+                // The fade starts well before the cut. At 0.88 the last line was still
+                // nearly opaque where it was sliced through, which reads as a drawing bug
+                // rather than as more text below it.
                 .mask(
                     LinearGradient(
                         stops: [
                             .init(color: .black, location: 0),
-                            .init(color: .black, location: 0.88),
-                            .init(color: .black.opacity(0.15), location: 1),
+                            .init(color: .black, location: 0.70),
+                            .init(color: .black.opacity(0.05), location: 1),
                         ], startPoint: .top, endPoint: .bottom))
             }
         }
@@ -106,12 +109,12 @@ struct MarkdownText: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 6) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
                 switch block {
                 case .heading(let text):
                     Text(text)
-                        .font(Theme.label(10, .semibold))
+                        .font(Theme.prose(11, .semibold))
                         .foregroundStyle(Theme.primary)
                 case .code(let text):
                     Text(text)
@@ -124,8 +127,8 @@ struct MarkdownText: View {
                         .background(
                             RoundedRectangle(cornerRadius: 4).fill(Theme.hairline.opacity(0.6)))
                 case .bullet(let text):
-                    HStack(alignment: .top, spacing: 5) {
-                        Text("•").font(Theme.mono(9)).foregroundStyle(Theme.tertiary)
+                    HStack(alignment: .top, spacing: 6) {
+                        Text("•").font(Theme.prose(10)).foregroundStyle(Theme.tertiary)
                         inline(text)
                     }
                 case .paragraph(let text):
@@ -139,8 +142,9 @@ struct MarkdownText: View {
     /// inline spans well and only falls down on block structure, done above.
     private func inline(_ text: String) -> some View {
         Text((try? AttributedString(markdown: text)) ?? AttributedString(text))
-            .font(Theme.mono(9))
+            .font(Theme.prose(10.5))
             .foregroundStyle(Theme.secondary)
+            .lineSpacing(1.5)
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
     }

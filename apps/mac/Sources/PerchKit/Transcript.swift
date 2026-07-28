@@ -117,7 +117,25 @@ public enum Transcript {
                 of: "<\(tag)>[\\s\\S]*?</\(tag)>", with: "", options: .regularExpression)
         }
         let trimmed = result.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+        guard !trimmed.isEmpty, !isMachineWritten(trimmed) else { return nil }
+        return trimmed
+    }
+
+    /// Messages a tool wrote into the conversation, wearing a user's clothes.
+    ///
+    /// A multiplexer feeding tool output back in, a memory writer posting an episode: both
+    /// arrive as ordinary `user` lines and both were being read as the question someone had
+    /// asked. Two cards out of three said the user had typed
+    /// `#442 [tool_output] Bash: cat /private/tmp/claude-501/…`, which is not a thing anyone
+    /// has ever typed.
+    ///
+    /// Matched on the shape rather than on a list of tools, because the list is not ours and
+    /// grows without telling us: a leading `#123 [something]`, or a message that is nothing
+    /// but a JSON object.
+    private static func isMachineWritten(_ text: String) -> Bool {
+        if text.range(of: "^#\\d+ \\[[a-z_]+\\]", options: .regularExpression) != nil { return true }
+        if text.hasPrefix("{"), text.hasSuffix("}"), text.contains("\"") { return true }
+        return false
     }
 
     /// Wrappers Claude Code puts into the conversation that no one typed: slash-command

@@ -83,6 +83,21 @@ enum Theme {
         return .custom(family, fixedSize: size)
     }
 
+    /// Sentences, in a face built for sentences.
+    ///
+    /// Everything used to be Departure Mono, which is right for the things this panel was
+    /// built around — commands, paths, token counts, a live-updating number whose fixed
+    /// advance stops the layout shifting on every tick. It is wrong for a paragraph. A
+    /// bitmap face at 9pt with a uniform advance gives a reply the texture of a terminal
+    /// dump: even colour, no word shapes, nothing for the eye to land on. The panel read as
+    /// output rather than as an answer, and that was the whole complaint.
+    ///
+    /// So prose gets the system face and the machine keeps the pixels. A code block inside
+    /// a reply stays monospaced, because there it is doing the job it is for.
+    static func prose(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight, design: .default)
+    }
+
     // MARK: - Metrics
 
     static let cornerRadius: CGFloat = 8

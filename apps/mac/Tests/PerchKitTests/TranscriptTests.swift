@@ -125,6 +125,37 @@ struct TranscriptTests {
         #expect(turn?.reply == "Two files.\n\nThe subagent finished.")
     }
 
+    @Test("a tool writing into the conversation is not a person typing")
+    func machineWrittenMessages() {
+        // Both of these were on screen as the user's own question: a multiplexer feeding
+        // tool output back in, and a raw result object.
+        let injected = Transcript.turn(in: [
+            user("why is the deploy failing?"),
+            assistant([["type": "text", "text": "Looking at the logs."]]),
+            user("#442 [tool_output] Bash: cat /private/tmp/claude-501/-Users-kevin/9f"),
+        ])
+        #expect(injected?.prompt == "why is the deploy failing?")
+
+        let json = Transcript.turn(in: [
+            user("run it"),
+            assistant([["type": "text", "text": "Done."]]),
+            user("{\"stdout\":\"\",\"stderr\":\"\",\"interrupted\":false}"),
+        ])
+        #expect(json?.prompt == "run it")
+    }
+
+    @Test("a message that merely mentions a number is still a message")
+    func numbersAreNotMachines() {
+        // The shape is `#123 [tag]` at the very start. Anything else a person might type
+        // with a hash in it has to survive.
+        let turn = Transcript.turn(in: [
+            user("#442 is still open, can you look?"),
+            assistant([["type": "text", "text": "On it."]]),
+        ])
+
+        #expect(turn?.prompt == "#442 is still open, can you look?")
+    }
+
     @Test("a window that opens mid-turn still shows the reply it can see")
     func replyWithoutItsPrompt() {
         // Reading the tail of a megabyte file lands mid-turn; the prompt is then simply
