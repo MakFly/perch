@@ -59,7 +59,9 @@ if let index = CommandLine.arguments.firstIndex(of: "--render") {
         ? CommandLine.arguments[index + 1] : "perch-panel.png"
     exit(
         Diagnostics.render(
-            path, layout: CommandLine.arguments.contains("--clean") ? .clean : .detailed))
+            path, layout: CommandLine.arguments.contains("--clean") ? .clean : .detailed,
+            // `--render x.png --idle` draws the resting strip instead of the panel.
+            idle: CommandLine.arguments.contains("--idle")))
 }
 
 if let index = CommandLine.arguments.firstIndex(of: "--tasks") {

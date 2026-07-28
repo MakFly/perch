@@ -98,8 +98,17 @@ enum Diagnostics {
     /// needs Screen Recording and opening it needs a synthetic click, and Perch is built
     /// to ask for neither. `ImageRenderer` needs neither either.
     @MainActor
-    static func render(_ path: String, layout: PanelLayout = .detailed) -> Int32 {
-        let renderer = ImageRenderer(content: PanelPreview.scene(layout: layout))
+    static func render(_ path: String, layout: PanelLayout = .detailed, idle: Bool = false)
+        -> Int32
+    {
+        return
+        idle
+            ? write(ImageRenderer(content: PanelPreview.idleScene()), to: path)
+            : write(ImageRenderer(content: PanelPreview.scene(layout: layout)), to: path)
+    }
+
+    @MainActor
+    private static func write(_ renderer: ImageRenderer<some View>, to path: String) -> Int32 {
         // Retina, so the pixel glyphs and the bitmap face are judged at the scale they
         // are actually drawn at.
         renderer.scale = 2

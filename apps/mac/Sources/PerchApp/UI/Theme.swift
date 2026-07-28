@@ -56,6 +56,18 @@ enum Theme {
         isBundled ? family : "\(family) NOT REGISTERED — falling back to the system face"
     }
 
+    /// How wide a run of monospaced text will actually be.
+    ///
+    /// The resting strip is a fixed-width window sized before it draws, so a guess at the
+    /// advance is a guess at whether the last character is clipped by the edge it is meant
+    /// to sit inside — which is how the session count lost a digit once already.
+    static func monoWidth(_ text: String, size: CGFloat) -> CGFloat {
+        let font =
+            (isBundled ? NSFont(name: family, size: size) : nil)
+            ?? .monospacedSystemFont(ofSize: size, weight: .regular)
+        return (text as NSString).size(withAttributes: [.font: font]).width
+    }
+
     static func mono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
         guard isBundled else { return .system(size: size, weight: weight, design: .monospaced) }
         // Departure Mono ships one weight. Emphasis has to come from colour and from the

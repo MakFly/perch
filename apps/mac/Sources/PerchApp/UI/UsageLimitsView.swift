@@ -146,11 +146,21 @@ private struct ConnectQuota: View {
 struct UsageLimitsStrip: View {
     let reading: UsageLimitsReader.Reading?
     var showsRemaining = false
+    /// Which slice of the windows to draw. The resting strip splits them across the cutout
+    /// — the two everyone has on one side, anything per-model on the other — and the
+    /// hardware in between means one view cannot draw them all.
+    var dropFirst = 0
+    var maximum = 2
+
+    private var windows: [NamedWindow] {
+        guard let reading else { return [] }
+        return Array(reading.limits.windows.dropFirst(dropFirst).prefix(maximum))
+    }
 
     var body: some View {
-        if let reading, !reading.limits.isEmpty {
+        if !windows.isEmpty {
             HStack(spacing: 8) {
-                ForEach(reading.limits.windows.prefix(2)) { window in
+                ForEach(windows) { window in
                     HStack(spacing: 3) {
                         Text(short(window.id))
                             .font(Theme.mono(9))
@@ -176,12 +186,18 @@ struct UsageLimitsStrip: View {
     }
 
     private func percentage(_ window: RateLimitWindow) -> String {
+        Self.percentage(window, showsRemaining: showsRemaining)
+    }
+
+    private func short(_ id: String) -> String { Self.short(id) }
+
+    static func percentage(_ window: RateLimitWindow, showsRemaining: Bool) -> String {
         let value = showsRemaining ? (window.remaining ?? 100) : (window.utilization ?? 0)
         return String(format: "%.0f%%", value)
     }
 
     /// The header has room for `5h`, not `5h session`.
-    private func short(_ id: String) -> String {
+    static func short(_ id: String) -> String {
         switch id {
         case "five_hour": return "5h"
         case "seven_day": return "7d"
@@ -189,6 +205,15 @@ struct UsageLimitsStrip: View {
         case "seven_day_sonnet": return "7d sonnet"
         default: return id
         }
+    }
+
+    /// The chip as one string, for measuring. Built from the same pieces the view draws so
+    /// the two cannot drift: a width measured from a different label is a wrong width.
+    static func label(for window: NamedWindow, showsRemaining: Bool = false) -> String {
+        [short(window.id), percentage(window.window, showsRemaining: showsRemaining),
+         window.window.timeLeft()]
+            .compactMap { $0 }
+            .joined(separator: " ")
     }
 
     private func tint(_ used: Double) -> Color {

@@ -153,13 +153,61 @@ enum PanelPreview {
         }
     }
 
+    /// The resting strip, above a stand-in for the hardware cutout.
+    ///
+    /// The one part of the UI that cannot be photographed without Screen Recording *and*
+    /// cannot be opened without Accessibility — so it is the part most worth drawing here.
+    /// Two rows: what it looks like with agents running and a request held, and what it
+    /// looks like with nothing running at all, which has to be exactly nothing.
+    static func idleScene() -> some View {
+        VStack(spacing: 24) {
+            ForEach([true, false], id: \.self) { busy in
+                VStack(spacing: 6) {
+                    Text(busy ? "two agents · one request held" : "nothing running")
+                        .font(Theme.mono(9))
+                        .foregroundStyle(Theme.tertiary)
+
+                    let reading =
+                        busy
+                        ? IdleReading(
+                            agents: [(.claude, true), (.codex, false)], count: 3, needsYou: true)
+                        : IdleReading(agents: [], count: 0, needsYou: false)
+                    let flank = IdleView.flank(
+                        for: reading, quota: busy ? quota : nil, waiting: busy ? 1 : 0)
+
+                    ZStack(alignment: .top) {
+                        // The cutout, drawn as the hardware would be: nothing may cross it.
+                        Rectangle()
+                            .fill(Color.black)
+                            .frame(width: 200 + flank * 2, height: 32)
+                        IdleView(
+                            reading: reading, notchWidth: 200, notchHeight: 32,
+                            quota: busy ? quota : nil, waiting: busy ? 1 : 0)
+                    }
+                    .overlay(
+                        Rectangle().stroke(Theme.hairline, lineWidth: 1)
+                            .frame(width: 200, height: 32))
+
+                    Text("flank \(Int(flank))pt")
+                        .font(Theme.mono(8))
+                        .foregroundStyle(Theme.hairlineStrong)
+                }
+            }
+        }
+        .padding(28)
+        .frame(width: 680)
+        .background(Theme.raised)
+    }
+
     private static var quota: UsageLimitsReader.Reading {
         UsageLimitsReader.Reading(
             limits: RateLimits(
                 fiveHour: RateLimitWindow(
                     utilization: 13, resetsAt: .now.addingTimeInterval(2 * 3_600 + 120)),
                 sevenDay: RateLimitWindow(
-                    utilization: 28, resetsAt: .now.addingTimeInterval(4 * 86_400 + 17 * 3_600))),
+                    utilization: 28, resetsAt: .now.addingTimeInterval(4 * 86_400 + 17 * 3_600)),
+                sevenDayOpus: RateLimitWindow(
+                    utilization: 61, resetsAt: .now.addingTimeInterval(2 * 86_400))),
             updatedAt: .now)
     }
 }
