@@ -206,44 +206,12 @@ struct SessionCardView: View {
     }
 
     /// What it is doing right now — the line that changes while you watch.
-    @ViewBuilder
     private var activityLine: some View {
-        switch session.status {
-        case .compacting:
-            Text(t("Compacting context…"))
-                .font(Theme.mono(10))
-                .foregroundStyle(Theme.warning)
-        case .idle:
-            Text(t("Waiting for you"))
-                .font(Theme.mono(10))
-                .foregroundStyle(Theme.tertiary)
-        case .failed:
-            Text(session.lastDetail.isEmpty ? t("Ended on a failure") : session.lastDetail)
-                .font(Theme.mono(10))
-                .foregroundStyle(Theme.danger)
-                .lineLimit(1)
-                .truncationMode(.middle)
-        case .needsApproval:
-            Text(t("Waiting for your approval"))
-                .font(Theme.mono(10))
-                .foregroundStyle(Theme.warning)
-        case .waitingForAnswer:
-            Text(t("Waiting for your answer"))
-                .font(Theme.mono(10))
-                .foregroundStyle(Theme.warning)
-        case .waitingForInput:
-            Text(t("Waiting for your input"))
-                .font(Theme.mono(10))
-                .foregroundStyle(Theme.warning)
-        case .working, .runningTool:
-            // The same line either way: what it is doing is the command, and the dot
-            // beside it already says whether a tool is in flight.
-            Text(session.lastDetail)
-                .font(Theme.mono(10))
-                .foregroundStyle(Theme.info)
-                .lineLimit(1)
-                .truncationMode(.middle)
-        }
+        Text(session.activitySummary.text)
+            .font(Theme.mono(10))
+            .foregroundStyle(session.activitySummary.tint)
+            .lineLimit(1)
+            .truncationMode(.middle)
     }
 
     /// Coarse on purpose: a second-by-second counter on every card is noise, and the
@@ -261,7 +229,30 @@ struct SessionCardView: View {
     }
 }
 
-private struct StatusDot: View {
+extension SessionSnapshot {
+    /// What this session is doing right now, and how to feel about it.
+    ///
+    /// One place, because two views draw it: the card in the panel and the row in the
+    /// peek. A hover that says "Bash(swift build)" over a panel that says "Waiting for
+    /// your approval" is two answers to one question.
+    var activitySummary: (text: String, tint: Color) {
+        switch status {
+        case .compacting: return (t("Compacting context…"), Theme.warning)
+        case .idle: return (t("Waiting for you"), Theme.tertiary)
+        case .failed:
+            return (lastDetail.isEmpty ? t("Ended on a failure") : lastDetail, Theme.danger)
+        case .needsApproval: return (t("Waiting for your approval"), Theme.warning)
+        case .waitingForAnswer: return (t("Waiting for your answer"), Theme.warning)
+        case .waitingForInput: return (t("Waiting for your input"), Theme.warning)
+        case .working, .runningTool:
+            // The same line either way: what it is doing is the command, and the dot
+            // beside it already says whether a tool is in flight.
+            return (lastDetail, Theme.info)
+        }
+    }
+}
+
+struct StatusDot: View {
     let status: SessionStatus
     @State private var isPulsing = false
 

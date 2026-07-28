@@ -62,6 +62,12 @@ panel, `esc` or move away to dismiss. **Right-click** for Settings, Updates, Mut
 
 At rest the notch shows a sprite per running agent and a live session count — live, not busy,
 because a CLI waiting on you is the one worth seeing. The pill turns amber when one is blocked.
+Mute and Settings appear on the strip as your cursor comes near, and give the menu bar back
+when it leaves.
+
+A turn ending flashes one line beside the cutout for two seconds and takes it back on its own —
+which session, and what it was doing. A session that ended badly and a quota window crossing
+your line arrive the same way. Reaching for a flash turns it into the summary.
 
 Each session is a card: name, last prompt, current activity, agent and terminal, age. Click it
 to jump to that terminal (exact pane in iTerm2, Terminal.app, kitty, WezTerm and VS Code-family

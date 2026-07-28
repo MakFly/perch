@@ -22,6 +22,9 @@ public struct NotchInteraction: Sendable, Equatable {
         /// Perch has something worth a glance but not an answer — a quota window crossing
         /// the line you set. Shows the peek and takes it away again on its own.
         case revealRequested
+        /// One line of news: a turn ended, a session failed, a quota window crossed.
+        /// Shows the flash and takes it back on its own.
+        case flashRequested
         /// The grace period after hover-out elapsed.
         case collapseTimerFired
     }
@@ -44,6 +47,9 @@ public struct NotchInteraction: Sendable, Equatable {
     public static let expandedGrace = 700
     /// A peek nobody asked for has to last long enough to read and short enough to forgive.
     public static let revealGrace = 4_000
+    /// Long enough to read six words, short enough that it is gone before it is in the
+    /// way. It is also the ceiling on how wrong this can be: nothing waits on a flash.
+    public static let flashGrace = 2_200
 
     @discardableResult
     public mutating func handle(_ event: Event) -> [Effect] {
@@ -71,6 +77,12 @@ public struct NotchInteraction: Sendable, Equatable {
             case .idle:
                 state = .peek
                 return [.cancelCollapse]
+            case .flash:
+                // Reaching for a notice is asking for the rest of it, and the peek is the
+                // rest of it. The timer that would have taken the flash away has to die
+                // with it, or the panel closes under the cursor two seconds later.
+                state = .peek
+                return [.cancelCollapse]
             case .peek, .expanded:
                 // Keep it open while the cursor is inside.
                 return [.cancelCollapse]
@@ -84,7 +96,9 @@ public struct NotchInteraction: Sendable, Equatable {
                 return [.scheduleCollapse(milliseconds: Self.peekGrace)]
             case .expanded:
                 return [.scheduleCollapse(milliseconds: Self.expandedGrace)]
-            case .idle, .alert:
+            // A flash is already on its way out; rescheduling on a cursor that merely
+            // passed by would restart the clock on news nobody read.
+            case .idle, .flash, .alert:
                 return []
             }
 
@@ -98,6 +112,14 @@ public struct NotchInteraction: Sendable, Equatable {
             guard state == .peek else { return [] }
             state = .expanded
             return [.cancelCollapse]
+
+        case .flashRequested:
+            // Only from rest, and never over a panel: an open panel is someone reading,
+            // and a peek is someone about to. Losing a line of news to either is the
+            // right trade — it is news, not a question.
+            guard state == .idle else { return [] }
+            state = .flash
+            return [.scheduleCollapse(milliseconds: Self.flashGrace)]
 
         case .revealRequested:
             // Only from rest. Interrupting a panel someone opened, or one they are
@@ -113,7 +135,7 @@ public struct NotchInteraction: Sendable, Equatable {
             return [.cancelCollapse]
 
         case .collapseTimerFired:
-            guard state == .peek || state == .expanded else { return [] }
+            guard state == .peek || state == .expanded || state == .flash else { return [] }
             state = .idle
             return []
 

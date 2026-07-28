@@ -107,7 +107,34 @@ final class NotchController {
         }
     }
 
+    /// How close the cursor has to come before the resting strip offers its controls.
+    ///
+    /// Generously wide on purpose. The strip changes width when the controls appear, and
+    /// `panelRect` — what clicks are tested against — takes the new width on the frame
+    /// the flag flips while the drawing takes 0.38s to catch up. A margin the cursor
+    /// needs 140pt of travel to cross means that gap is always spent approaching, never
+    /// clicking.
+    private static let proximity = (x: CGFloat(140), y: CGFloat(60))
+
+    /// Whether the cursor is close enough for the resting strip to offer its controls.
+    private(set) var isCursorNear = false
+
+    /// Exactly when the strip draws mute and settings — read by the view to draw them and
+    /// by the click routing to know they are there.
+    ///
+    /// One answer to this, because two would be a gear that can be clicked where none is
+    /// drawn. That was already true with nothing running: the strip is zero wide, drew no
+    /// icons, and a click on the right-hand end of the *cutout* still opened Settings.
+    var showsIdleControls: Bool { state == .idle && idleFlank > 0 && isCursorNear }
+
     private func sampleCursor(clicked: Bool) {
+        // Sampled before anything else, and from the same rect the strip is drawn in: the
+        // controls are what widen it, so the flag has to be current before its own effect
+        // is measured.
+        let near = panelRect.insetBy(dx: -Self.proximity.x, dy: -Self.proximity.y)
+            .contains(NSEvent.mouseLocation)
+        if near != isCursorNear { isCursorNear = near }
+
         // Hysteresis: it takes 6pt more to leave than it took to enter.
         //
         // Without it the boundary is a single line, and a hand resting on it crosses that
@@ -129,7 +156,9 @@ final class NotchController {
             let hotspots = IdleStrip.hotspots(
                 in: panelRect, contentHeight: geometry.size.height)
             let point = NSEvent.mouseLocation
-            if hotspots.mute.contains(point) {
+            if !showsIdleControls {
+                send(.tappedNotch)
+            } else if hotspots.mute.contains(point) {
                 onIdleIcon?(.mute)
             } else if hotspots.settings.contains(point) {
                 onIdleIcon?(.settings)
@@ -202,6 +231,19 @@ final class NotchController {
     /// Ignored unless the notch is at rest — see `NotchInteraction`.
     func reveal() {
         send(.revealRequested)
+    }
+
+    /// What the flash is currently saying. Held rather than passed, because the state
+    /// machine owns *whether* it shows and this owns *what* — and the notice has to
+    /// survive the transition out, or the last frame of the animation is an empty strip.
+    private(set) var notice: NotchFlash?
+
+    /// A line of news at the cutout, taken back on its own. Ignored unless the notch is
+    /// at rest: a panel someone opened outranks anything Perch has to say.
+    func flash(_ notice: NotchFlash) {
+        guard state == .idle else { return }
+        self.notice = notice
+        send(.flashRequested)
     }
 
     func flashActivity() {

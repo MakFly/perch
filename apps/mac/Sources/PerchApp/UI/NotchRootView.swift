@@ -72,14 +72,6 @@ struct NotchRootView: View {
                         .opacity(controller.state.drawsPanel ? 1 : 0)
                 }
 
-            // The cutout strip is the only click target that opens and closes the panel.
-            // It used to be the whole view, which meant clicking anywhere inside the
-            // panel — including empty space between controls — collapsed it.
-            Color.clear
-                .frame(height: controller.geometry.size.height)
-                .contentShape(Rectangle())
-                .onTapGesture { controller.toggleExpanded() }
-
             content
                 // One state's content is not a redraw of another's, so it is replaced
                 // rather than diffed — and it comes in from the top edge, where the panel
@@ -88,16 +80,29 @@ struct NotchRootView: View {
                 .id(controller.state)
                 .transition(Motion.contentSwap)
                 .animation(Motion.content, value: controller.state)
-                // Resting content sits *level with* the cutout, either side of it;
-                // everything else hangs below the bezel.
-                .padding(.top, controller.state == .idle ? 0 : controller.geometry.size.height)
-                .padding(.horizontal, controller.state == .idle ? 0 : 14)
-                .padding(.bottom, controller.state == .idle ? 0 : 12)
+                // Only the bottom is shared any more. Every state that draws a panel lays
+                // its own top band out through `ShoulderHeader`, and pads its own body —
+                // the strip either side of the cutout is chrome now, not padding.
+                .padding(.bottom, controller.state.hangsBelowTheBezel ? 12 : 0)
                 // Peek has no controls, so its whole body opens the panel. Expanded does,
                 // so it gets no blanket tap — otherwise clicking near a button dismisses
                 // the thing you were aiming at.
                 .contentShape(Rectangle())
                 .onTapGesture { controller.tapBody() }
+
+            // The cutout itself is the toggle: the one place a click always opens and
+            // closes the panel.
+            //
+            // It used to be the full width of the strip, which is now where the tabs and
+            // the quota live — a blanket target across them would eat the clicks they
+            // exist for. Last in the stack, so it wins over the content underneath it;
+            // nothing is ever drawn in this rectangle anyway, it is a hole in the screen.
+            Color.clear
+                .frame(
+                    width: controller.geometry.size.width,
+                    height: controller.geometry.size.height)
+                .contentShape(Rectangle())
+                .onTapGesture { controller.toggleExpanded() }
         }
         // Clipped to the panel, so the content is *revealed* by the growing shape instead
         // of spilling past it. The content settles in 0.16s and the panel takes 0.38s, so
@@ -113,12 +118,17 @@ struct NotchRootView: View {
     private var idleFlank: CGFloat {
         IdleView.flank(
             for: IdleReading(model.activity), quota: model.usage.limits,
-            waiting: model.permissions.waitingCount)
+            waiting: model.permissions.waitingCount,
+            showsControls: controller.isCursorNear)
     }
 
     private var shape: NotchShape {
         guard controller.state == .idle else {
-            return NotchShape(bottomRadius: 18, shoulderRadius: 9)
+            // The shoulder is what makes the two top corners meet the menu bar on a curve
+            // instead of a right angle. It reaches past the panel's own edge, so the
+            // canvas reserves room for it — see `NotchState.shoulder`, which is where the
+            // number lives precisely because two files have to agree on it.
+            return NotchShape(bottomRadius: 18, shoulderRadius: NotchState.shoulder)
         }
         // A painted resting strip carries more corner than an empty one: at 10pt of
         // overhang a 10pt radius is what makes it one shape wrapped around the cutout
@@ -139,43 +149,79 @@ struct NotchRootView: View {
                 quota: model.usage.limits,
                 waiting: model.permissions.waitingCount,
                 isMuted: !model.sounds.enabled,
-                showsIcons: idleFlank > 0)
+                showsIcons: controller.showsIdleControls)
+        case .flash:
+            if let notice = controller.notice {
+                FlashView(notch: controller.geometry.size, notice: notice)
+            }
         case .peek:
-            PeekView(activity: model.activity, usage: model.usage)
+            PeekView(
+                notch: controller.geometry.size,
+                sessions: model.activity.activeSessions,
+                fallback: model.activity.events.first?.detail ?? t("waiting for Claude Code"),
+                tokens: model.usage.today.totalTokens.compactTokens,
+                cost: model.usage.today.cost.compactCost)
         case .expanded:
-            ExpandedView(model: model, onClose: { controller.dismiss() })
+            ExpandedView(notch: controller.geometry.size, model: model)
         case .alert:
             alertContent
         }
     }
 
+    /// The card, under a band that says where the request came from.
+    ///
+    /// Origin and queue depth are the same two facts whichever card it is, and they were
+    /// repeated in each of the three headers — where they competed with the tool, the
+    /// question or the plan for the one line that matters. They belong beside the cutout:
+    /// the panel is 520pt wide and the hardware is 190 of it.
     @ViewBuilder
     private var alertContent: some View {
         if let pending = model.permissions.current {
-            // A question and a plan are not permissions, and answering them with
-            // Allow/Deny throws away the whole point of the tool.
-            switch pending.kind {
-            case .question(let request):
-                QuestionCardView(
-                    request: request,
-                    projectName: pending.projectName,
-                    submit: { model.answer($0) },
-                    // Staying silent hands the question back to Claude Code's own prompt.
-                    cancel: { model.decide(.ask) }
-                )
-                // `id` resets the card's local selection when the next request arrives.
-                .id(pending.id)
-            case .plan(let request):
-                PlanCardView(
-                    request: request,
-                    projectName: pending.projectName,
-                    approve: { model.approvePlan($0) },
-                    reject: { model.rejectPlan(feedback: $0) }
-                )
-                .id(pending.id)
-            case .permission:
-                permissionContent(pending)
+            VStack(alignment: .leading, spacing: 8) {
+                ShoulderHeader(notch: controller.geometry.size) {
+                    AgentGlyph(agent: pending.agent, pixel: 1.5, isBreathing: false)
+                    Text(pending.projectName ?? pending.agent.displayName)
+                        .font(Theme.mono(10))
+                        .foregroundStyle(Theme.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                } trailing: {
+                    if model.permissions.waitingCount > 1 {
+                        Chip(
+                            text: t("%lld waiting", model.permissions.waitingCount - 1),
+                            tint: Theme.warning)
+                    }
+                }
+
+                card(for: pending)
+                    .padding(.horizontal, 14)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func card(for pending: PendingPermission) -> some View {
+        // A question and a plan are not permissions, and answering them with Allow/Deny
+        // throws away the whole point of the tool.
+        switch pending.kind {
+        case .question(let request):
+            QuestionCardView(
+                request: request,
+                submit: { model.answer($0) },
+                // Staying silent hands the question back to Claude Code's own prompt.
+                cancel: { model.decide(.ask) }
+            )
+            // `id` resets the card's local selection when the next request arrives.
+            .id(pending.id)
+        case .plan(let request):
+            PlanCardView(
+                request: request,
+                approve: { model.approvePlan($0) },
+                reject: { model.rejectPlan(feedback: $0) }
+            )
+            .id(pending.id)
+        case .permission:
+            permissionContent(pending)
         }
     }
 
@@ -200,6 +246,63 @@ struct NotchRootView: View {
             }
             .opacity(0)
         }
+    }
+}
+
+// MARK: - The band the cutout sits in
+
+/// The top band, composed rather than reserved.
+///
+/// Every state but rest used to begin with `.padding(.top, notchHeight)`: a full-width
+/// strip of black held back for hardware that is only 190pt wide. On a 680pt panel that
+/// threw away two shoulders of 245pt — which is exactly where an island puts its chrome,
+/// and the reason its panels read as wrapped around the cutout rather than hung under it.
+///
+/// So the band is laid out instead: what belongs left of the hardware, the hardware's own
+/// width, and what belongs right of it. The two sides split the remainder evenly, because
+/// the window is centred on the cutout and an asymmetric split would put the tabs and the
+/// quota at different distances from the same edge.
+struct ShoulderHeader<Leading: View, Trailing: View>: View {
+    let notch: CGSize
+    @ViewBuilder var leading: Leading
+    @ViewBuilder var trailing: Trailing
+
+    var body: some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 6) { leading }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 14)
+                .padding(.trailing, 8)
+
+            // Nothing is ever drawn here. It is a hole in the screen.
+            Color.clear.frame(width: notch.width)
+
+            HStack(spacing: 6) { trailing }
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.leading, 8)
+                .padding(.trailing, 14)
+        }
+        .frame(height: notch.height)
+    }
+}
+
+/// A control small enough to sit in a shoulder.
+struct ShoulderButton: View {
+    let symbol: String
+    var tint: Color = Theme.tertiary
+    var help: String = ""
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 18, height: 18)
+                .background(Circle().fill(Theme.hairline))
+        }
+        .buttonStyle(.plain)
+        .help(help)
     }
 }
 
@@ -262,9 +365,13 @@ struct IdleView: View {
     var waiting: Int = 0
     /// Sounds off, so the speaker can say so rather than lying about it.
     var isMuted = false
-    /// Only where there is a strip to put them on. With nothing running and no quota the
-    /// strip is exactly zero wide, and two icons floating beside the cutout would undo the
-    /// one property that state has.
+    /// Only where there is a strip to put them on, and only once a hand is on its way.
+    ///
+    /// With nothing running and no quota the strip is exactly zero wide, and two icons
+    /// floating beside the cutout would undo the one property that state has. The rest of
+    /// the time they are controls, not state: 44pt of menu bar spent on two things you can
+    /// only want while reaching for them. So they arrive with the cursor — see
+    /// `NotchController.showsIdleControls`, which is the one place that decides.
     var showsIcons = false
 
     private var count: Int { reading.count }
@@ -286,7 +393,8 @@ struct IdleView: View {
                 }
             }
             .frame(
-                width: IdleView.flank(for: reading, quota: quota, waiting: waiting)
+                width: IdleView.flank(
+                    for: reading, quota: quota, waiting: waiting, showsControls: showsIcons)
                     - IdleView.inset
             )
             .padding(.trailing, IdleView.inset)
@@ -345,7 +453,8 @@ struct IdleView: View {
                 }
             }
             .frame(
-                width: IdleView.flank(for: reading, quota: quota, waiting: waiting)
+                width: IdleView.flank(
+                    for: reading, quota: quota, waiting: waiting, showsControls: showsIcons)
                     - IdleView.inset
             )
             .padding(.leading, IdleView.inset)
@@ -368,7 +477,8 @@ struct IdleView: View {
     /// points narrower than what it had to draw — so the count was clipped by the edge it
     /// was supposed to sit inside.
     static func flank(
-        for reading: IdleReading, quota: UsageLimitsReader.Reading? = nil, waiting: Int = 0
+        for reading: IdleReading, quota: UsageLimitsReader.Reading? = nil, waiting: Int = 0,
+        showsControls: Bool = false
     ) -> CGFloat {
         // The two windows every account has go left of the cutout; anything per-model goes
         // right of it. Each side is measured from what it actually draws.
@@ -381,9 +491,10 @@ struct IdleView: View {
         let glyphs = reading.count == 0 ? 0 : max(CGFloat(reading.agents.count) * 19, 24)
         let left = leftQuota + (leftQuota > 0 && glyphs > 0 ? 6 : 0) + glyphs
         var right = rightQuota + (reading.count > 0 ? 24 : 0) + (waiting > 0 ? 26 : 0)
-        // The icons are only drawn when there is a strip to draw them on, which is exactly
-        // when this function returns something other than zero.
-        right += iconsWidth + iconSpacing
+        // The icons are only drawn when there is a strip to draw them on — which is
+        // exactly when this function returns something other than zero — and only while
+        // the cursor is close enough to be reaching for them.
+        if showsControls { right += iconsWidth + iconSpacing }
 
         // Both shoulders are one number — the window is symmetric around the cutout — so
         // the wider side decides. An asymmetric window would centre the notch off the
@@ -423,76 +534,109 @@ private struct PulsingDot: View {
     }
 }
 
-/// Hover preview: what is running, and what today has cost.
-private struct PeekView: View {
-    let activity: ActivityStore
-    let usage: UsageModel
+/// Hover preview: which sessions are running, and what today has cost.
+///
+/// It used to answer *how many* — a count, the last tool call from whichever session
+/// emitted it, and the day's total. Which is the one question the resting strip already
+/// answers, so hovering bought a bigger version of what you could see without hovering.
+/// The band beside the cutout takes the totals, and the body says who: one row per
+/// session, the same order the panel lists them in.
+struct PeekView: View {
+    let notch: CGSize
+    /// Plain data rather than the stores, so the off-screen preview draws the same view
+    /// the app does instead of an imitation of it that can drift.
+    let sessions: [SessionSnapshot]
+    /// What to say when nothing is running: the last thing that happened.
+    let fallback: String
+    let tokens: String
+    let cost: String
+
+    /// Three rows is the most that fits before the peek becomes the panel.
+    private var shown: [SessionSnapshot] { Array(sessions.prefix(3)) }
+    private var hidden: Int { max(0, sessions.count - shown.count) }
 
     var body: some View {
-        HStack(spacing: 10) {
-            StatusBadge(count: activity.workingSessionCount)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(Theme.label(12, .semibold))
-                    .foregroundStyle(Theme.primary)
-                    .lineLimit(1)
-                Text(subtitle)
+        VStack(alignment: .leading, spacing: 3) {
+            ShoulderHeader(notch: notch) {
+                Text(headline)
                     .font(Theme.mono(10))
                     .foregroundStyle(Theme.secondary)
                     .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-
-            Spacer(minLength: 0)
-
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(usage.today.totalTokens.compactTokens)
-                    .font(Theme.mono(12, .semibold))
+            } trailing: {
+                Text(tokens)
+                    .font(Theme.mono(10, .semibold))
                     .foregroundStyle(Theme.primary)
-                Text(usage.today.cost.compactCost)
-                    .font(Theme.mono(9))
+                Text(cost)
+                    .font(Theme.mono(10))
                     .foregroundStyle(Theme.active)
+                // Without this the peek reads as a dead end: nothing suggests the panel
+                // goes any further.
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(Theme.tertiary)
             }
 
-            // Without this the peek reads as a dead end: nothing suggests the panel goes
-            // any further.
-            Image(systemName: "chevron.down")
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(Theme.tertiary)
+            VStack(alignment: .leading, spacing: 3) {
+                if shown.isEmpty {
+                    Text(fallback)
+                        .font(Theme.mono(10))
+                        .foregroundStyle(Theme.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                } else {
+                    ForEach(shown, id: \.id) { session in
+                        PeekRow(session: session)
+                    }
+                    if hidden > 0 {
+                        Text(t("+%lld more", hidden))
+                            .font(Theme.mono(9))
+                            .foregroundStyle(Theme.tertiary)
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 2)
         }
     }
 
-    private var title: String {
-        switch activity.sessions.count {
-        case 0: return t("Perch")
-        case 1: return activity.activeSessions.first?.projectName ?? t("1 session")
-        default: return t("%lld sessions", activity.sessions.count)
-        }
-    }
-
-    private var subtitle: String {
-        activity.events.first?.detail ?? t("waiting for Claude Code")
+    /// Live, not working — the same count the resting strip shows, so the number does not
+    /// change under the cursor on the way in.
+    private var headline: String {
+        let live = sessions.count
+        let blocked = sessions.filter { $0.status.needsYou }.count
+        guard live > 0 else { return t("Perch") }
+        guard blocked > 0 else { return t("%lld live", live) }
+        return t("%lld live · %lld on you", live, blocked)
     }
 }
 
-private struct StatusBadge: View {
-    let count: Int
+/// One session, on one line: who, what, how long, and whether it needs you.
+struct PeekRow: View {
+    let session: SessionSnapshot
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 5)
-                .fill(count > 0 ? Theme.active.opacity(0.18) : Theme.hairline)
-                .frame(width: 22, height: 22)
-            if count > 0 {
-                Text("\(count)")
-                    .font(Theme.mono(11, .bold))
-                    .foregroundStyle(Theme.active)
-            } else {
-                Circle()
-                    .fill(Theme.tertiary)
-                    .frame(width: 5, height: 5)
-            }
+        HStack(spacing: 6) {
+            AgentGlyph(agent: session.agent, pixel: 1.5, isBreathing: session.isWorking)
+
+            Text(session.projectName ?? t("session"))
+                .font(Theme.mono(10))
+                .foregroundStyle(Theme.primary)
+                .lineLimit(1)
+
+            Text(session.activitySummary.text)
+                .font(Theme.mono(10))
+                .foregroundStyle(session.activitySummary.tint)
+                .lineLimit(1)
+                .truncationMode(.middle)
+
+            Spacer(minLength: 4)
+
+            Text(SessionCardView.elapsed(since: session.startedAt))
+                .font(Theme.mono(9))
+                .foregroundStyle(Theme.tertiary)
+                .monospacedDigit()
+
+            StatusDot(status: session.status)
         }
     }
 }
@@ -504,14 +648,20 @@ private enum Tab: String, CaseIterable {
 }
 
 private struct ExpandedView: View {
+    let notch: CGSize
     let model: AppModel
-    let onClose: () -> Void
     @State private var tab: Tab = .activity
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
+            // The chrome moved into the band the cutout already occupied, which is how the
+            // list got back the 32pt of black above it *and* the row the tabs used to have
+            // below it. The close button did not come along: the band is the panel's own
+            // shape now, so the strip you click to shut it is the thing your eye is on,
+            // and escape still works.
+            ShoulderHeader(notch: notch) {
                 TabBar(selection: tab) { tab = $0 }
+            } trailing: {
                 // Quota lives in the header on every tab: it is the one number you want
                 // without having to go looking for it.
                 UsageLimitsStrip(
@@ -520,53 +670,34 @@ private struct ExpandedView: View {
 
                 // Muting is a thing you want *while* a machine is being noisy, which is
                 // never the moment to go and find a settings window.
-                Button { model.updateSounds(model.sounds.toggledEnabled) } label: {
-                    Image(systemName: model.sounds.enabled ? "speaker.wave.2" : "speaker.slash")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(model.sounds.enabled ? Theme.tertiary : Theme.warning)
-                        .padding(5)
-                        .background(Circle().fill(Theme.hairline))
-                }
-                .buttonStyle(.plain)
-                .help(model.sounds.enabled ? t("Mute sounds") : t("Unmute sounds"))
+                ShoulderButton(
+                    symbol: model.sounds.enabled ? "speaker.wave.2" : "speaker.slash",
+                    tint: model.sounds.enabled ? Theme.tertiary : Theme.warning,
+                    help: model.sounds.enabled ? t("Mute sounds") : t("Unmute sounds")
+                ) { model.updateSounds(model.sounds.toggledEnabled) }
 
                 // With no Dock icon and no menu bar item, this is the only way in.
-                Button { model.showSettings() } label: {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(Theme.tertiary)
-                        .padding(5)
-                        .background(Circle().fill(Theme.hairline))
+                ShoulderButton(symbol: "gearshape", help: t("Settings")) {
+                    model.showSettings()
                 }
-                .buttonStyle(.plain)
-                .help(t("Settings"))
-
-                // An explicit close, so getting out never depends on finding the 32pt
-                // strip or knowing about Escape.
-                Button(action: onClose) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(Theme.tertiary)
-                        .padding(5)
-                        .background(Circle().fill(Theme.hairline))
-                }
-                .buttonStyle(.plain)
-                .help(t("Close (esc)"))
             }
 
-            switch tab {
-            case .activity: ActivityList(model: model)
-            case .stats:
-                StatsView(
-                    usage: model.usage,
-                    showsRemaining: model.preferences.showsRemainingQuota,
-                    onToggleQuota: {
-                        var next = model.preferences
-                        next.showsRemainingQuota.toggle()
-                        model.updatePreferences(next)
-                    })
-            case .rank: RankView(model: model)
+            Group {
+                switch tab {
+                case .activity: ActivityList(model: model)
+                case .stats:
+                    StatsView(
+                        usage: model.usage,
+                        showsRemaining: model.preferences.showsRemainingQuota,
+                        onToggleQuota: {
+                            var next = model.preferences
+                            next.showsRemainingQuota.toggle()
+                            model.updatePreferences(next)
+                        })
+                case .rank: RankView(model: model)
+                }
             }
+            .padding(.horizontal, 14)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         // Opening the panel is the moment to catch up on plans that moved while Perch was

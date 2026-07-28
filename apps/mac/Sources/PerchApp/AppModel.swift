@@ -179,8 +179,16 @@ final class AppModel {
         usage.onQuotaEvent = { [weak self] event in
             guard let self else { return }
             switch event {
-            case .crossed:
-                if announce(.usageWarning) == .full { notch.reveal() }
+            case .crossed(let window):
+                // The number, not a warning: "5h 92%" is the whole message, and a peek
+                // that has to be read past to find it is a peek that gets dismissed.
+                if announce(.usageWarning) == .full {
+                    notch.flash(
+                        .quota(
+                            window: UsageLimitsStrip.short(window.id) + " "
+                                + UsageLimitsStrip.percentage(window.window, showsRemaining: false),
+                            resets: window.window.timeLeft()))
+                }
             // Coming back under the line is good news, and good news does not get to take
             // the screen. A sound if you asked for one, and the number speaks for itself.
             case .reset:
@@ -320,10 +328,17 @@ final class AppModel {
             // played. Reading it is the whole feature.
             switch request.event {
             case "Stop":
-                if announce(.taskComplete, client: request.client) == .full { notch.reveal() }
+                // A flash rather than a peek: which session finished is one line, and it
+                // is gone in two seconds whether or not anyone looked up.
+                if announce(.taskComplete, client: request.client) == .full {
+                    notch.flash(
+                        .finished(project: projectName(of: request), detail: title(of: request)))
+                }
                 notify(.finished, for: request)
             case "StopFailure":
-                if announce(.taskError, client: request.client) == .full { notch.reveal() }
+                if announce(.taskError, client: request.client) == .full {
+                    notch.flash(.failed(project: projectName(of: request), detail: ""))
+                }
                 notify(.failed, for: request)
             default: break
             }
@@ -366,6 +381,17 @@ final class AppModel {
             response.outputB64 = response.renderedOutputBase64(event: request.event)
         }
         return response
+    }
+
+    /// Which project a hook came from, as the flash names it.
+    private func projectName(of request: PerchRequest) -> String? {
+        request.payload.cwd.map { URL(fileURLWithPath: $0).lastPathComponent }
+    }
+
+    /// What that session was doing, so a finished turn says which one rather than that
+    /// one finished.
+    private func title(of request: PerchRequest) -> String {
+        request.payload.sessionId.flatMap { activity.sessions[$0]?.title } ?? ""
     }
 
     /// How much taller than a plain permission the current card needs to be.

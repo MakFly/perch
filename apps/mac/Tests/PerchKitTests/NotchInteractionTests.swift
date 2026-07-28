@@ -81,15 +81,66 @@ import Testing
 
     for state in NotchState.allCases {
         let size = state.size(notch: notch, flank: 40)
-        #expect(size.width <= canvas.width)
+        // The shoulders are drawn past the panel's own edge, so the canvas has to hold
+        // them too — a curve outside the window is a corner that comes out square.
+        #expect(size.width + NotchState.shoulder * 2 <= canvas.width)
         #expect(size.height <= canvas.height)
     }
+
+    // The widest thing Perch ever draws is a plan card: `AppModel` adds 140pt to the alert
+    // for it. Shoulders included, it still has to fit.
+    let widestAlert = NotchState.alert.size(notch: notch).width + 140
+    #expect(widestAlert + NotchState.shoulder * 2 <= canvas.width)
 
     // An alert is the one state that grows past its own size: `AppModel` adds room for the
     // card's options on top of it. Four options — more than Claude Code ever asks — is
     // 4 × 44 + 40.
     let tallestAlert = NotchState.alert.size(notch: notch).height + 4 * 44 + 40
     #expect(tallestAlert <= canvas.height)
+}
+
+// MARK: - Flash
+
+@Test func newsFlashesFromRestAndTakesItselfBack() {
+    var notch = NotchInteraction()
+    let effects = notch.handle(.flashRequested)
+
+    #expect(notch.state == .flash)
+    #expect(effects == [.scheduleCollapse(milliseconds: NotchInteraction.flashGrace)])
+
+    notch.handle(.collapseTimerFired)
+    #expect(notch.state == .idle)
+}
+
+/// A flash is news, not a question — so it loses to anything someone is already reading.
+@Test func aFlashNeverTakesAPanelSomeoneIsUsing() {
+    for state in [NotchState.peek, .expanded, .alert] {
+        var notch = NotchInteraction(state: state)
+        notch.handle(.flashRequested)
+        #expect(notch.state == state)
+    }
+}
+
+@Test func reachingForAFlashOpensThePeekAndKillsItsTimer() {
+    var notch = NotchInteraction(state: .flash)
+    let effects = notch.handle(.hoverEntered)
+
+    #expect(notch.state == .peek)
+    // Without this the peek someone just opened closes under the cursor two seconds later.
+    #expect(effects == [.cancelCollapse])
+}
+
+/// A cursor that merely passed by must not restart the clock on news nobody read.
+@Test func aCursorLeavingAFlashSchedulesNothing() {
+    var notch = NotchInteraction(state: .flash)
+    #expect(notch.handle(.hoverExited).isEmpty)
+    #expect(notch.state == .flash)
+}
+
+@Test func aPermissionOutranksAFlash() {
+    var notch = NotchInteraction(state: .flash)
+    notch.handle(.permissionArrived)
+    #expect(notch.state == .alert)
 }
 
 // MARK: - Hover

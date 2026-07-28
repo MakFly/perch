@@ -26,27 +26,13 @@ struct PermissionAlertView: View {
                 .font(.system(size: 11))
                 .foregroundStyle(.orange)
 
+            // Project and queue depth are in the band beside the cutout: they are the same
+            // two facts on every card, and they were crowding the one line that is not.
             Text(pending.tool)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.white)
 
-            if let project = pending.projectName {
-                Text(project)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.white.opacity(0.45))
-                    .lineLimit(1)
-            }
-
             Spacer(minLength: 0)
-
-            if waitingCount > 1 {
-                Text("+\(waitingCount - 1) waiting")
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.5))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(.white.opacity(0.1)))
-            }
         }
     }
 

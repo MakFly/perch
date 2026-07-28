@@ -98,11 +98,16 @@ enum Diagnostics {
     /// needs Screen Recording and opening it needs a synthetic click, and Perch is built
     /// to ask for neither. `ImageRenderer` needs neither either.
     @MainActor
-    static func render(_ path: String, layout: PanelLayout = .detailed, idle: Bool = false)
-        -> Int32
-    {
-        return
-        idle
+    static func render(
+        _ path: String, layout: PanelLayout = .detailed, idle: Bool = false,
+        phases: Bool = false
+    ) -> Int32 {
+        if phases {
+            // Every state in its real shape, over a menu bar: the only way to see what the
+            // two top corners do without Screen Recording.
+            return write(ImageRenderer(content: PanelPreview.phases()), to: path)
+        }
+        return idle
             ? write(ImageRenderer(content: PanelPreview.idleScene()), to: path)
             : write(ImageRenderer(content: PanelPreview.scene(layout: layout)), to: path)
     }
@@ -280,6 +285,7 @@ enum Diagnostics {
     private static func label(_ state: NotchState) -> String {
         switch state {
         case .idle: return "idle    "
+        case .flash: return "flash   "
         case .peek: return "peek    "
         case .expanded: return "expanded"
         case .alert: return "alert   "

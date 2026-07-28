@@ -201,6 +201,183 @@ enum PanelPreview {
         .background(Theme.raised)
     }
 
+    // MARK: - Every phase, in the shape it is actually drawn in
+
+    /// One sheet with every state on it, each in its real `NotchShape`, over a stand-in
+    /// for the menu bar.
+    ///
+    /// The two things this answers cannot be answered by the panel scene above: what the
+    /// top corners do where the panel meets the menu bar, and whether the band beside the
+    /// cutout is laid out or wasted. Both are properties of the *shape*, and the scene
+    /// draws its content on a plain rectangle.
+    static func phases() -> some View {
+        let notch = CGSize(width: 190, height: 32)
+        let busy = IdleReading(agents: [(.claude, true), (.codex, false)], count: 3, needsYou: true)
+
+        return VStack(alignment: .leading, spacing: 20) {
+            stage("rest · nothing running", size: NotchState.idle.size(notch: notch), painted: false) {
+                IdleView(
+                    reading: IdleReading(agents: [], count: 0, needsYou: false),
+                    notchWidth: notch.width, notchHeight: notch.height)
+            }
+
+            stage(
+                "rest · two agents, one request held, cursor away",
+                size: NotchState.idle.size(
+                    notch: notch,
+                    flank: IdleView.flank(for: busy, quota: quota, waiting: 1)),
+                radius: (12, 8)
+            ) {
+                IdleView(
+                    reading: busy, notchWidth: notch.width, notchHeight: notch.height,
+                    quota: quota, waiting: 1)
+            }
+
+            stage(
+                "rest · the same, with a hand on its way",
+                size: NotchState.idle.size(
+                    notch: notch,
+                    flank: IdleView.flank(
+                        for: busy, quota: quota, waiting: 1, showsControls: true)),
+                radius: (12, 8)
+            ) {
+                IdleView(
+                    reading: busy, notchWidth: notch.width, notchHeight: notch.height,
+                    quota: quota, waiting: 1, showsIcons: true)
+            }
+
+            stage("flash · a turn ended", size: NotchState.flash.size(notch: notch)) {
+                FlashView(
+                    notch: notch,
+                    notice: .finished(project: "perch", detail: "Prose in a face built for prose"))
+            }
+
+            stage("peek · who is running", size: NotchState.peek.size(notch: notch)) {
+                PeekView(
+                    notch: notch, sessions: [working, unattended, waiting],
+                    fallback: "", tokens: "84.2K", cost: "$2.14")
+                    .padding(.bottom, 12)
+            }
+
+            stage("expanded · tabs and quota in the band", size: NotchState.expanded.size(notch: notch)) {
+                VStack(alignment: .leading, spacing: 8) {
+                    ShoulderHeader(notch: notch) {
+                        ForEach(["activity", "stats", "rank"], id: \.self) { tab in
+                            Text(tab)
+                                .font(Theme.label(11, .medium))
+                                .foregroundStyle(tab == "activity" ? Theme.primary : Theme.tertiary)
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 4)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(tab == "activity" ? Theme.hairlineStrong : .clear))
+                        }
+                    } trailing: {
+                        UsageLimitsStrip(reading: quota)
+                        ShoulderButton(symbol: "speaker.wave.2") {}
+                        ShoulderButton(symbol: "gearshape") {}
+                    }
+
+                    VStack(alignment: .leading, spacing: Theme.rowSpacing) {
+                        SessionCardView(session: working, tasks: plan)
+                        SessionCardView(session: unattended)
+                    }
+                    .padding(.horizontal, 14)
+                }
+                .padding(.bottom, 12)
+            }
+
+            stage("alert · origin and queue in the band", size: NotchState.alert.size(notch: notch)) {
+                VStack(alignment: .leading, spacing: 8) {
+                    ShoulderHeader(notch: notch) {
+                        AgentGlyph(agent: .claude, pixel: 1.5, isBreathing: false)
+                        Text("perch")
+                            .font(Theme.mono(10))
+                            .foregroundStyle(Theme.secondary)
+                    } trailing: {
+                        Chip(text: "2 waiting", tint: Theme.warning)
+                    }
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.orange)
+                            Text("Bash")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.white)
+                            Spacer(minLength: 0)
+                        }
+                        Text("rm -rf build/ && swift build -c release")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.85))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 7).fill(.white.opacity(0.07)))
+                        HStack(spacing: 6) {
+                            ForEach(["Allow ⌥↵", "Always", "Deny ⌥⌫"], id: \.self) { title in
+                                Text(title)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .fill(Color.white.opacity(0.16)))
+                            }
+                            Spacer(minLength: 0)
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                }
+                .padding(.bottom, 12)
+            }
+        }
+        .padding(24)
+        .frame(width: 820, alignment: .leading)
+        .background(Theme.raised)
+    }
+
+    /// One phase, over a menu bar and a desktop — the only background against which a
+    /// corner can be judged. Nothing here clips: the shoulders are drawn *outside* the
+    /// panel's rect, and clipping the stage would hide the very defect this is for.
+    private static func stage<Content: View>(
+        _ title: String, size: CGSize, radius: (bottom: CGFloat, shoulder: CGFloat) = (18, NotchState.shoulder),
+        painted: Bool = true, @ViewBuilder content: () -> Content
+    ) -> some View {
+        let shape = NotchShape(bottomRadius: radius.bottom, shoulderRadius: radius.shoulder)
+        return VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(Theme.mono(9))
+                .foregroundStyle(Theme.tertiary)
+
+            ZStack(alignment: .top) {
+                VStack(spacing: 0) {
+                    // The menu bar, translucent over a desktop — which is why a square
+                    // corner there is so loud: it cuts a colour, not a black.
+                    LinearGradient(
+                        colors: [Color(hex: 0x3E72A8), Color(hex: 0x2A5480)],
+                        startPoint: .leading, endPoint: .trailing)
+                        .frame(height: 32)
+                    Color(hex: 0x121212)
+                }
+
+                ZStack(alignment: .top) {
+                    shape.fill(Theme.surface).opacity(painted ? 1 : 0)
+                    shape.stroke(Theme.hairline, lineWidth: 1).opacity(painted ? 1 : 0)
+                    content()
+                }
+                .frame(width: size.width, height: size.height, alignment: .top)
+                // As the panel does. Content taller than its state spills out of a plain
+                // frame in both directions, which would draw a card over the menu bar and
+                // make the harness lie about the one thing it is for.
+                .clipShape(shape)
+            }
+            .frame(width: 772, height: size.height + 16, alignment: .top)
+        }
+    }
+
     private static var quota: UsageLimitsReader.Reading {
         UsageLimitsReader.Reading(
             limits: RateLimits(

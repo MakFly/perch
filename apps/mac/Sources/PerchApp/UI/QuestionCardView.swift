@@ -8,7 +8,6 @@ import SwiftUI
 /// options, and only submits once every question has one.
 struct QuestionCardView: View {
     let request: AskUserQuestionRequest
-    let projectName: String?
     let submit: ([String: [String]]) -> Void
     let cancel: () -> Void
 
@@ -53,13 +52,6 @@ struct QuestionCardView: View {
             Text(question?.header.isEmpty == false ? question!.header : t("Question"))
                 .font(Theme.label(12, .semibold))
                 .foregroundStyle(Theme.primary)
-
-            if let projectName {
-                Text(projectName)
-                    .font(Theme.mono(10))
-                    .foregroundStyle(Theme.tertiary)
-                    .lineLimit(1)
-            }
 
             Spacer(minLength: 0)
 
@@ -253,7 +245,6 @@ extension PlanCardView {
 /// asks, and one button saying "Approve" could only ever guess which one it meant.
 struct PlanCardView: View {
     let request: PlanApprovalRequest
-    let projectName: String?
     let approve: (PlanMode) -> Void
     let reject: (String) -> Void
 
@@ -268,11 +259,6 @@ struct PlanCardView: View {
                 Text(t("Plan"))
                     .font(Theme.label(12, .semibold))
                     .foregroundStyle(Theme.primary)
-                if let projectName {
-                    Text(projectName)
-                        .font(Theme.mono(10))
-                        .foregroundStyle(Theme.tertiary)
-                }
                 Spacer(minLength: 0)
             }
 

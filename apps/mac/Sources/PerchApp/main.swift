@@ -64,8 +64,10 @@ if let index = CommandLine.arguments.firstIndex(of: "--render") {
     exit(
         Diagnostics.render(
             path, layout: CommandLine.arguments.contains("--clean") ? .clean : .detailed,
-            // `--render x.png --idle` draws the resting strip instead of the panel.
-            idle: CommandLine.arguments.contains("--idle")))
+            // `--render x.png --idle` draws the resting strip instead of the panel, and
+            // `--phases` draws every state in its own shape, over a menu bar.
+            idle: CommandLine.arguments.contains("--idle"),
+            phases: CommandLine.arguments.contains("--phases")))
 }
 
 if let index = CommandLine.arguments.firstIndex(of: "--tasks") {

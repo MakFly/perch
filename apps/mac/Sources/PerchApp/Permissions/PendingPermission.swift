@@ -37,6 +37,8 @@ final class PendingPermission: Identifiable {
     var tool: String { request.payload.toolName ?? "Tool" }
     var cwd: String? { request.payload.cwd }
     var sessionId: String? { request.payload.sessionId }
+    /// Absent means Claude Code — every hook installed before `--source` existed.
+    var agent: Agent { request.agent ?? .claude }
 
     var projectName: String? {
         cwd.map { URL(fileURLWithPath: $0).lastPathComponent }
