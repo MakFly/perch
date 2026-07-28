@@ -68,6 +68,17 @@ private let askInput = toolInput(
     #expect(PlanApprovalRequest.parse(toolInput(#"{}"#)) == nil)
 }
 
+/// The plan goes back exactly as it came. Perch approves plans, it does not edit them —
+/// and `updatedInput` has to be there at all, or Claude Code drops the approval.
+@Test func planApprovalsSendTheInputBackUnchanged() throws {
+    let original = toolInput(#"{"plan": "1. do it", "note": "keep me"}"#)
+    let request = try #require(PlanApprovalRequest.parse(original))
+
+    #expect(request.updatedInput(original: original) == original)
+    // No input to echo is still an answer, not silence.
+    #expect(request.updatedInput(original: nil) == toolInput(#"{"plan": "1. do it"}"#))
+}
+
 @Test func requestKindIsChosenByToolName() {
     func request(_ tool: String, _ input: JSONValue) -> PerchRequest {
         var payload = ClaudeHookPayload()

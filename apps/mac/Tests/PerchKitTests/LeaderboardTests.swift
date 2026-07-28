@@ -130,6 +130,27 @@ struct LeaderboardTests {
         let body = Data(#"{"error":"handle \"kevin\" is already taken"}"#.utf8)
         #expect(LeaderboardClient.message(from: body, status: 409).contains("already taken"))
         #expect(LeaderboardClient.message(from: Data(), status: 500) == "The leaderboard answered 500.")
+        // With a host, the message says which one — a 404 from a broken deployment and a
+        // 404 from a client pointed at a domain that never existed read identically
+        // otherwise, and their fixes are opposite.
+        #expect(
+            LeaderboardClient.message(from: Data(), status: 404, host: "example.test")
+                == "example.test answered 404.")
+    }
+
+    /// The default has to be the deployed host, not a placeholder.
+    ///
+    /// It was a placeholder for a while and the failure was silent: everything worked while
+    /// the environment variable was passed by hand, and launching the app the way anyone
+    /// actually launches it answered 404 against a domain that had never existed.
+    @Test("the client points somewhere real without being told where")
+    func defaultsAreDeployedHosts() {
+        for url in [LeaderboardClient.defaultBaseURL, LeaderboardClient.defaultSiteURL] {
+            #expect(url.scheme == "https")
+            let host = url.host ?? ""
+            #expect(!host.isEmpty)
+            #expect(host != "perch-leaderboard.vercel.app", "still the invented placeholder")
+        }
     }
 
     // MARK: - Decoding

@@ -52,6 +52,82 @@ private func specific(of output: HookOutput) throws -> [String: Any] {
     #expect(decision["updatedPermissions"] == nil)
 }
 
+/// Approving a plan is the one allow that must carry both halves.
+///
+/// `ExitPlanMode` declares `requiresUserInteraction()`, and Claude Code drops an `allow`
+/// with no `updatedInput` for such a tool — it prompts in the terminal as if the hook had
+/// said nothing, which is what Approve used to do. The `setMode` is the second half: an
+/// approval that names no mode leaves the session in `plan`, where every edit is refused.
+/// Verified against the `hookSpecificOutput` schemas in Claude Code 2.1.220.
+@Test func planApprovalCarriesTheInputAndTheMode() throws {
+    let plan = try JSONDecoder().decode(
+        JSONValue.self, from: #"{"plan": "1. do it"}"#.data(using: .utf8)!)
+    let body = try specific(
+        of: HookOutput(
+            event: "PermissionRequest", decision: .allow, reason: nil,
+            updatedInput: plan, planMode: .bypassPermissions))
+
+    let decision = try #require(body["decision"] as? [String: Any])
+    #expect(decision["behavior"] as? String == "allow")
+    let updated = try #require(decision["updatedInput"] as? [String: Any])
+    #expect(updated["plan"] as? String == "1. do it")
+
+    let updates = try #require(decision["updatedPermissions"] as? [[String: Any]])
+    #expect(updates.count == 1)
+    #expect(updates.first?["type"] as? String == "setMode")
+    #expect(updates.first?["mode"] as? String == "bypassPermissions")
+    #expect(updates.first?["destination"] as? String == "session")
+}
+
+/// The exact bytes `perch-hook` prints for an approved plan — local and remote hooks both
+/// echo this, so it is the contract in full.
+@Test func theApprovedPlanBytes() throws {
+    let plan = try JSONDecoder().decode(
+        JSONValue.self, from: #"{"plan": "1. do it"}"#.data(using: .utf8)!)
+    let response = PerchResponse(decision: .allow, updatedInput: plan, planMode: .default)
+    let data = try #require(response.renderedOutput(event: "PermissionRequest"))
+    // Key order out of `JSONEncoder` is not stable; the shape is what is being pinned.
+    let canonical = try JSONSerialization.data(
+        withJSONObject: try JSONSerialization.jsonObject(with: data), options: [.sortedKeys])
+
+    #expect(
+        String(decoding: canonical, as: UTF8.self) == """
+            {"hookSpecificOutput":{"decision":{"behavior":"allow",\
+            "updatedInput":{"plan":"1. do it"},\
+            "updatedPermissions":[{"destination":"session","mode":"default",\
+            "type":"setMode"}]},"hookEventName":"PermissionRequest"}}
+            """)
+}
+
+/// The three modes Claude Code's own plan prompt offers for continuing in place, spelled
+/// the way its permission-mode enum spells them. A typo here is silent: the update is
+/// rejected and the session stays in plan mode.
+@Test func planModesAreSpelledTheWayClaudeCodeSpellsThem() throws {
+    let modes = try PlanMode.allCases.map { mode -> String in
+        let body = try specific(
+            of: HookOutput(
+                event: "PermissionRequest", decision: .allow, reason: nil, planMode: mode))
+        let decision = try #require(body["decision"] as? [String: Any])
+        let updates = try #require(decision["updatedPermissions"] as? [[String: Any]])
+        return try #require(updates.first?["mode"] as? String)
+    }
+
+    #expect(modes == ["default", "acceptEdits", "bypassPermissions"])
+}
+
+/// A remembered rule and a plan mode are different entries in the same list, and neither
+/// may overwrite the other.
+@Test func aRuleAndAModeBothLandInUpdatedPermissions() throws {
+    let body = try specific(
+        of: HookOutput(
+            event: "PermissionRequest", decision: .allow, reason: nil,
+            rule: RememberedRule(toolName: "Bash", content: nil), planMode: .default))
+
+    let decision = try #require(body["decision"] as? [String: Any])
+    let updates = try #require(decision["updatedPermissions"] as? [[String: Any]])
+    #expect(updates.map { $0["type"] as? String } == ["setMode", "addRules"])
+}
+
 @Test func preToolUseKeepsTheLegacySchema() throws {
     let body = try specific(
         of: HookOutput(event: "PreToolUse", decision: .deny, reason: "nope"))

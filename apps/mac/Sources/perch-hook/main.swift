@@ -107,15 +107,12 @@ guard response.token == runtime.token else {
     exit(0)
 }
 
-guard let decision = response.decision, wantsDecision else { exit(0) }
+guard wantsDecision else { exit(0) }
 
-// `ask` means the user deferred to Claude Code's own prompt, so we stay silent.
-guard decision != .ask else { exit(0) }
-
-let output = HookOutput(
-    event: event, decision: decision, reason: response.reason, rule: response.rule,
-    updatedInput: response.updatedInput)
-if let data = try? JSONEncoder().encode(output) {
-    FileHandle.standardOutput.write(data)
-}
+// Built by the same code the remote shell hook is handed, rather than assembled a second
+// time here. This file used to spell the schema out itself, and it silently fell a field
+// behind: an approved plan's mode never reached Claude Code. `nil` covers both "no
+// decision" and `ask` — deferring to Claude Code's own prompt means printing nothing.
+guard let data = response.renderedOutput(event: event) else { exit(0) }
+FileHandle.standardOutput.write(data)
 exit(0)

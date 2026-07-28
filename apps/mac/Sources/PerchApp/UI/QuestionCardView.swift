@@ -248,10 +248,13 @@ extension PlanCardView {
 ///
 /// Denying with a message is not a refusal here — Claude Code reads it as feedback and
 /// keeps going, which is what "tell it what to fix" means.
+///
+/// Approving is a choice of mode rather than a yes: that is what Claude Code's own prompt
+/// asks, and one button saying "Approve" could only ever guess which one it meant.
 struct PlanCardView: View {
     let request: PlanApprovalRequest
     let projectName: String?
-    let approve: () -> Void
+    let approve: (PlanMode) -> Void
     let reject: (String) -> Void
 
     @State private var feedback = ""
@@ -305,14 +308,23 @@ struct PlanCardView: View {
                 )
 
             HStack(spacing: 6) {
-                Spacer(minLength: 0)
                 SmallButton(
                     title: feedback.isEmpty ? t("Reject") : t("Send feedback"),
                     tint: Theme.warning
                 ) {
                     reject(feedback)
                 }
-                SmallButton(title: t("Approve"), tint: Theme.active, action: approve)
+                Spacer(minLength: 0)
+                ForEach(PlanMode.allCases, id: \.self) { mode in
+                    SmallButton(
+                        title: t(mode.title),
+                        // Bypass is the one that stops asking about anything at all, and
+                        // it reads the same as the other two if it is not coloured.
+                        tint: mode == .bypassPermissions ? Theme.danger : Theme.active
+                    ) {
+                        approve(mode)
+                    }
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

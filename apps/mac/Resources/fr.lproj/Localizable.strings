@@ -72,7 +72,10 @@
 "Submit" = "Valider";
 "Submit all" = "Tout valider";
 "Answer in terminal" = "Répondre dans le terminal";
-"Approve" = "Approuver";
+/* Les trois modes d'approbation d'un plan, nommés comme Claude Code les nomme. */
+"Manual" = "Manuel";
+"Accept edits" = "Accepter les modifs";
+"Bypass" = "Sans garde-fou";
 "Reject" = "Rejeter";
 "Send feedback" = "Envoyer le retour";
 "Tell Claude what to change…" = "Dis à Claude quoi changer…";

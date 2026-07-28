@@ -161,7 +161,7 @@ struct NotchRootView: View {
                 PlanCardView(
                     request: request,
                     projectName: pending.projectName,
-                    approve: { model.decide(.allow) },
+                    approve: { model.approvePlan($0) },
                     reject: { model.rejectPlan(feedback: $0) }
                 )
                 .id(pending.id)

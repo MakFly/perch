@@ -8,13 +8,20 @@ import Foundation
 public struct LeaderboardClient: Sendable {
     /// Where the API lives. Overridable so a development build can point at
     /// `http://localhost:8787` without a rebuild of anything else.
+    ///
+    /// The fallback is the **deployed** host, not a placeholder. It was one for a while,
+    /// and the failure that produced was quiet and total: everything worked while the
+    /// environment variable was being passed by hand, and the moment the app was launched
+    /// the way anyone actually launches it — by double-clicking — the rank tab answered
+    /// "the leaderboard answered 404" against a domain that had never existed. A default
+    /// that only works for the person who wrote it is not a default.
     public static var defaultBaseURL: URL {
         if let override = ProcessInfo.processInfo.environment["PERCH_LEADERBOARD_URL"],
             let url = URL(string: override)
         {
             return url
         }
-        return URL(string: "https://perch-leaderboard.vercel.app")!
+        return URL(string: "https://perch-api-gamma.vercel.app")!
     }
 
     /// Where the *site* lives — which is not always where the API lives.
@@ -30,7 +37,7 @@ public struct LeaderboardClient: Sendable {
         {
             return url
         }
-        return defaultBaseURL
+        return URL(string: "https://perch-ten-phi.vercel.app")!
     }
 
     public var baseURL: URL
@@ -140,7 +147,9 @@ public struct LeaderboardClient: Sendable {
         let (data, response) = try await session.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
-            throw Failure.http(status: status, message: Self.message(from: data, status: status))
+            throw Failure.http(
+                status: status,
+                message: Self.message(from: data, status: status, host: request.url?.host))
         }
         return data
     }
@@ -156,12 +165,18 @@ public struct LeaderboardClient: Sendable {
 
     /// The server's own words when it has some, because "HTTP 409" does not tell anyone
     /// that the handle they picked is taken.
-    static func message(from data: Data, status: Int) -> String {
+    ///
+    /// When it has none, the host is named. A bare "the leaderboard answered 404" is true
+    /// of a broken deployment and of a client pointed at a domain that does not exist, and
+    /// those have opposite fixes — naming the host is what tells them apart without a
+    /// debugger.
+    static func message(from data: Data, status: Int, host: String? = nil) -> String {
         if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let error = object["error"] as? String, !error.isEmpty
         {
             return error
         }
-        return "The leaderboard answered \(status)."
+        guard let host else { return "The leaderboard answered \(status)." }
+        return "\(host) answered \(status)."
     }
 }
