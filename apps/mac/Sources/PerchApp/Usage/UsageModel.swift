@@ -14,30 +14,14 @@ final class UsageModel {
     private(set) var lastIndexedAt: Date?
     private(set) var indexError: String?
 
-    /// Subscription quota, which the transcripts cannot tell us. Two sources, kept apart
-    /// so neither can erase the other: the statusline bridge's cache, and — when asked
-    /// for — Anthropic's own usage endpoint.
+    /// Subscription quota, which the transcripts cannot tell us. The statusline bridge's
+    /// cache is the one source: it is the only place the quota is published locally, and
+    /// reading it needs no credential.
     private(set) var bridgeLimits: UsageLimitsReader.Reading?
-    private(set) var directLimits: UsageLimitsReader.Reading?
 
-    /// What the panel shows: whichever source spoke last. A statusline that stopped
-    /// rendering should not hold the display at a number from an hour ago when a live one
-    /// is available, and the reverse is just as true — so this is decided by timestamp
-    /// rather than by preferring a source.
-    ///
-    /// Nil means neither has anything yet, and the panel offers to connect instead of
+    /// Nil means the bridge has nothing yet, and the panel offers to connect instead of
     /// showing a wrong zero.
-    var limits: UsageLimitsReader.Reading? {
-        switch (bridgeLimits, directLimits) {
-        case let (bridge?, direct?):
-            let bridgeAt = bridge.updatedAt ?? .distantPast
-            let directAt = direct.updatedAt ?? .distantPast
-            return directAt > bridgeAt ? direct : bridge
-        case let (bridge?, nil): return bridge
-        case let (nil, direct?): return direct
-        case (nil, nil): return nil
-        }
-    }
+    var limits: UsageLimitsReader.Reading? { bridgeLimits }
 
     /// Quota reported by remote hosts, keyed by the alias you gave them. A build server
     /// signed in as a different account has a different budget, and conflating the two
@@ -54,43 +38,8 @@ final class UsageModel {
     /// is a question about quiet scenes and sound, not about usage.
     @ObservationIgnored var onQuotaEvent: ((QuotaWatcher.Event) -> Void)?
 
-    /// What the last direct read did, for the settings pane and the diagnostic report.
-    /// Nil until one has been attempted.
-    private(set) var directSummary: String?
-
-    @ObservationIgnored private var directTask: Task<Void, Never>?
-
     func apply(preferences: Preferences) {
         watcher.threshold = preferences.quotaWarningThreshold
-
-        guard preferences.directQuota else {
-            directTask?.cancel()
-            directTask = nil
-            return
-        }
-        guard directTask == nil else { return }
-        directTask = Task { [weak self] in
-            // Once now, then on a slow loop. The quota moves with your own turns, and
-            // Perch already knows when one happened — but a window can also reset while
-            // nothing is running, and this is the cheaper way to notice.
-            while !Task.isCancelled {
-                await self?.refreshDirect()
-                try? await Task.sleep(for: .seconds(300))
-            }
-        }
-    }
-
-    /// Reads the endpoint once. Returns what happened, which is what `Perch --quota`
-    /// prints and what the settings pane shows.
-    @discardableResult
-    func refreshDirect() async -> String {
-        let outcome = await DirectQuota.fetch()
-        directSummary = outcome.summary
-
-        guard let limits = outcome.limits else { return outcome.summary }
-        directLimits = UsageLimitsReader.Reading(limits: limits, updatedAt: .now)
-        noticeCrossings()
-        return outcome.summary
     }
 
     func recordRemoteLimits(host: String, limits: RateLimits, at date: Date = .now) {

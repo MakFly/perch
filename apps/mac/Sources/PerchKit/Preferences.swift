@@ -66,11 +66,6 @@ public struct Preferences: Codable, Sendable, Equatable {
     /// do next.
     public var quotaWarningThreshold: Double
 
-    /// Read the plan quota from Anthropic directly, rather than only from whatever the
-    /// statusline happens to render. Off until asked for: it needs the Claude Code
-    /// credential out of the Keychain, and macOS will say so.
-    public var directQuota: Bool
-
     public init(
         switcherKeyCode: UInt32 = 35,  // kVK_ANSI_P
         switcherModifiers: UInt32 = 4096 | 2048,  // controlKey | optionKey
@@ -82,8 +77,7 @@ public struct Preferences: Codable, Sendable, Equatable {
         betaUpdates: Bool = false,
         layout: PanelLayout = .detailed,
         showsRemainingQuota: Bool = false,
-        quotaWarningThreshold: Double = 90,
-        directQuota: Bool = false
+        quotaWarningThreshold: Double = 90
     ) {
         self.switcherKeyCode = switcherKeyCode
         self.switcherModifiers = switcherModifiers
@@ -96,7 +90,6 @@ public struct Preferences: Codable, Sendable, Equatable {
         self.layout = layout
         self.showsRemainingQuota = showsRemainingQuota
         self.quotaWarningThreshold = quotaWarningThreshold
-        self.directQuota = directQuota
     }
 
     /// Tolerant of keys added later: a file written by an older build must not reset the
@@ -129,7 +122,6 @@ public struct Preferences: Codable, Sendable, Equatable {
         quotaWarningThreshold =
             try container.decodeIfPresent(Double.self, forKey: .quotaWarningThreshold)
             ?? defaults.quotaWarningThreshold
-        directQuota = try container.decodeIfPresent(Bool.self, forKey: .directQuota) ?? false
     }
 
     /// Clamped rather than validated: a tuning slider should never be able to make the

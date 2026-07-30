@@ -53,10 +53,6 @@ if CommandLine.arguments.contains("--settings") {
     exit(Diagnostics.settings())
 }
 
-if CommandLine.arguments.contains("--quota") {
-    exit(Diagnostics.quota())
-}
-
 if let index = CommandLine.arguments.firstIndex(of: "--render") {
     let path =
         CommandLine.arguments.count > index + 1

@@ -142,14 +142,12 @@ switching to the terminal. This is that gap, closed.
 - [x] Statusline bridge — reversible, replays stdin untouched, timestamped backups,
       `--status` and `--remove`, and reversed by `remove.sh`
 - [x] Tolerant parsing of both live payload spellings
-- [x] **`api.anthropic.com/api/oauth/usage` as a second source.** The statusline is the
-      only *local* publisher of the quota, and it publishes nothing until it renders — so
-      someone who turned their statusline off has no number at all. This reads the
-      endpoint with the credential Claude Code already holds in the Keychain. Off until
-      switched on, because reading another app's Keychain item is not something to do
-      quietly: macOS asks, the token is used for one request and dropped, and the only
-      destination is `api.anthropic.com`. The two sources are kept apart and the freshest
-      one wins, so neither can blank the other.
+- [ ] ~~`api.anthropic.com/api/oauth/usage` as a second source.~~ **Dropped.** It worked,
+      and it was opt-in — but it only worked by reading another app's credential out of the
+      login Keychain, which puts a password dialog on screen and makes Perch a program that
+      handles a secret. No quota number is worth that. The statusline bridge stays the only
+      source; someone with their statusline off has no quota, and that is the honest answer.
+      Perch links no `Security` framework and holds no credential path.
 - [x] **A threshold that reveals the notch, and used/remaining.** Nobody watches a
       percentage climb; they discover it when the next turn is refused. The peek fires once
       per crossing — never on a first sighting, or Perch would chime at every login inside

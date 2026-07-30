@@ -103,7 +103,6 @@ Perch --diagnose            # how Perch sees your displays, and where the panel 
 Perch --status              # sessions seen, pending requests, tokens
 Perch --decide allow        # answer the oldest pending request (add --remember)
 Perch --answer "Postgres"   # answer an AskUserQuestion ("a | b, c" for several)
-Perch --quota               # read the plan quota from Anthropic once
 Perch --update [--install]  # check the feed, apply a verified update
 Perch --report              # a diagnostic report with nothing private in it
 Perch --index               # run the usage indexer in the foreground
@@ -119,9 +118,8 @@ transcripts: exact, to the token and the cent.
 
 Quota is a different number, published in exactly one local place — the JSON Claude Code
 hands the statusline. `usage-bridge.sh` sits in front of that command, caches `rate_limits`,
-and replays your original statusline byte for byte (`--remove` restores it verbatim).
-Optionally, Settings › Integrations enables a second source, `api.anthropic.com/api/oauth/usage`,
-read with the credential already in the Keychain. Freshest source wins.
+and replays your original statusline byte for byte (`--remove` restores it verbatim). That
+bridge is the only source: Perch never reads your Keychain, and never handles a credential.
 
 ## Staying out of the way
 

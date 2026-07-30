@@ -768,16 +768,6 @@ private struct IntegrationsPane: View {
             })
     }
 
-    private var directQuota: Binding<Bool> {
-        Binding(
-            get: { model.preferences.directQuota },
-            set: { value in
-                var next = model.preferences
-                next.directQuota = value
-                model.updatePreferences(next)
-            })
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Section(
@@ -893,32 +883,6 @@ private struct IntegrationsPane: View {
                     Spacer()
                 }
 
-                // The second source, and the only place Perch reads a secret. What that
-                // means is said here rather than in a changelog nobody reads.
-                Toggle(t("Also read the quota from Anthropic directly"), isOn: directQuota)
-                Text(
-                    t(
-                        "Uses the Claude Code credential already in your Keychain — macOS "
-                            + "asks once. The token is read for each request and dropped: "
-                            + "never stored, never logged, never sent anywhere but "
-                            + "api.anthropic.com. Useful when your statusline is off, "
-                            + "because that is the only thing that publishes the quota "
-                            + "locally."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if model.preferences.directQuota, let summary = model.usage.directSummary {
-                    HStack {
-                        Image(
-                            systemName: model.usage.directLimits == nil
-                                ? "exclamationmark.triangle.fill" : "checkmark.circle.fill"
-                        )
-                        .foregroundStyle(
-                            model.usage.directLimits == nil ? Color.orange : Color.green)
-                        Text(summary).font(.callout)
-                        Spacer()
-                    }
-                }
                 if let reading = model.usage.limits {
                     ForEach(reading.limits.windows) { window in
                         HStack {

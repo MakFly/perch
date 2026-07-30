@@ -526,19 +526,6 @@ final class AppModel {
             return PerchResponse(status: diagnosticReport())
         }
 
-        // `Perch --quota` — reads the endpoint once, whatever the setting says, and
-        // reports what came back. This is how the credential path gets exercised without
-        // waiting for a five-minute timer, and how a refusal is diagnosed at all.
-        //
-        // Answered rather than fired off: the first read can put a Keychain dialog on
-        // screen, and "it is waiting for you" is the one thing worth saying at that point.
-        // The CLI's own deadline may pass first — the read still finishes, and
-        // `Perch --status` says what it found.
-        if raw == "quota" {
-            let summary = await usage.refreshDirect()
-            return PerchResponse(status: "direct quota: \(summary)")
-        }
-
         // Opening the panel is otherwise a hover, which needs a synthetic mouse and so
         // Accessibility. This is the only way to exercise what the panel starts when it
         // appears — the transcript polling — from a terminal.
@@ -652,17 +639,6 @@ final class AppModel {
 
         report.section("Quota")
         report.field("bridge", usage.bridgeLimits == nil ? "not connected" : "connected")
-        // `Perch --quota` reads regardless of the setting, so "off" alone would be a lie in
-        // a report written right after one — the last read is the fact, the setting is the
-        // context for it.
-        let directState: String =
-            switch (preferences.directQuota, usage.directSummary) {
-            case (true, let summary?): summary
-            case (true, nil): "on, not read yet"
-            case (false, let summary?): "off — last manual read: \(summary)"
-            case (false, nil): "off"
-            }
-        report.field("direct source", directState)
         report.field(
             "prices",
             Pricing.refreshedAt.map { "refreshed \($0.formatted(.iso8601))" } ?? "as shipped")
@@ -761,9 +737,6 @@ final class AppModel {
             lines.append("quota          not applicable on this account")
         } else {
             lines.append("quota          no data — run ./scripts/usage-bridge.sh")
-        }
-        if let summary = usage.directSummary {
-            lines.append("quota direct   \(summary)")
         }
         for (host, reading) in usage.remoteLimits.sorted(by: { $0.key < $1.key }) {
             lines.append("quota @\(host)")

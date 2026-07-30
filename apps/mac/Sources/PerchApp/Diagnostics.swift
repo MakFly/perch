@@ -216,19 +216,6 @@ enum Diagnostics {
         }
     }
 
-    /// Reads the plan quota straight from Anthropic, once, and says what came back.
-    ///
-    /// The first run puts a Keychain dialog on screen, which can easily outlast this
-    /// command's own deadline — the read still finishes inside the app, and
-    /// `Perch --status` shows the result.
-    static func quota() -> Int32 {
-        var payload = ClaudeHookPayload()
-        payload.message = "quota"
-        return send(event: Wire.decideEvent, payload: payload) { _, status in
-            print(status ?? "(no response)")
-        }
-    }
-
     /// Opens the settings window of the instance that is already running.
     /// `Perch --reveal` opens the panel of the running instance.
     static func reveal() -> Int32 {
