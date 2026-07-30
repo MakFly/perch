@@ -155,6 +155,7 @@
 "Uses the Claude Code credential already in your Keychain — macOS asks once. The token is read for each request and dropped: never stored, never logged, never sent anywhere but api.anthropic.com. Useful when your statusline is off, because that is the only thing that publishes the quota locally." = "Utilise l'identifiant Claude Code déjà présent dans ton trousseau — macOS demande une fois. Le jeton est lu à chaque requête puis abandonné : jamais stocké, jamais journalisé, jamais envoyé ailleurs qu'à api.anthropic.com. Utile quand ta statusline est désactivée, puisque c'est la seule chose qui publie le quota en local.";
 "used" = "consommé";
 "left" = "restant";
+"waiting" = "en attente";
 "Show what is used instead" = "Afficher plutôt ce qui est consommé";
 "Codex trust" = "Confiance Codex";
 "Run /hooks in Codex and approve the Perch entries." = "Lance /hooks dans Codex et approuve les entrées Perch.";

@@ -150,6 +150,7 @@
 "Also read the quota from Anthropic directly" = "Also read the quota from Anthropic directly";
 "used" = "used";
 "left" = "left";
+"waiting" = "waiting";
 "Show what is used instead" = "Show what is used instead";
 "Codex trust" = "Codex trust";
 "Run /hooks in Codex and approve the Perch entries." = "Run /hooks in Codex and approve the Perch entries.";

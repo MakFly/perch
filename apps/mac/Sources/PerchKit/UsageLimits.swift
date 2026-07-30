@@ -20,6 +20,19 @@ public struct RateLimitWindow: Sendable, Equatable {
 
     public var isExhausted: Bool { (utilization ?? 0) >= 100 }
 
+    /// True once the reset has passed, which makes the percentage a statement about the
+    /// window that ended rather than the one running now.
+    ///
+    /// It happens on a machine with several sessions open: each renders its statusline
+    /// through the same bridge, and each sends the quota its own last API response carried,
+    /// so a session idle since yesterday publishes yesterday's numbers today. A window that
+    /// says 95% used and reset an hour ago is not 95% used — it is unknown until the next
+    /// render, and saying so is the only honest reading.
+    public func isStale(from now: Date = .now) -> Bool {
+        guard let resetsAt else { return false }
+        return resetsAt <= now
+    }
+
     /// Remaining share of the window, 0–100.
     public var remaining: Double? { utilization.map { max(0, 100 - $0) } }
 
@@ -101,8 +114,15 @@ public struct RateLimits: Sendable, Equatable {
     }
 
     /// The window closest to running out, which is the one the notch summarises.
-    public var tightest: NamedWindow? {
-        windows.max { ($0.window.utilization ?? 0) < ($1.window.utilization ?? 0) }
+    ///
+    /// Stale windows are passed over: a week that already reset is not the tightest thing
+    /// on the plan, however high its last number was. When every window is stale there is
+    /// nothing better to point at, so the highest is still returned — the views draw it as
+    /// unknown rather than as a percentage.
+    public func tightest(from now: Date = .now) -> NamedWindow? {
+        let current = windows.filter { !$0.window.isStale(from: now) }
+        return (current.isEmpty ? windows : current)
+            .max { ($0.window.utilization ?? 0) < ($1.window.utilization ?? 0) }
     }
 
     public var isEmpty: Bool { windows.isEmpty }

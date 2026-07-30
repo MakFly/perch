@@ -888,8 +888,12 @@ private struct IntegrationsPane: View {
                         HStack {
                             Text(window.title).foregroundStyle(.secondary)
                             Spacer()
-                            Text(String(format: "%.0f%% used", window.window.utilization ?? 0))
-                                .monospacedDigit()
+                            Text(
+                                window.window.isStale()
+                                    ? t("waiting")
+                                    : String(format: "%.0f%% used", window.window.utilization ?? 0)
+                            )
+                            .monospacedDigit()
                         }
                         .font(.callout)
                     }

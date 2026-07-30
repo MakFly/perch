@@ -643,8 +643,11 @@ final class AppModel {
             "prices",
             Pricing.refreshedAt.map { "refreshed \($0.formatted(.iso8601))" } ?? "as shipped")
         for window in usage.limits?.limits.windows ?? [] {
-            report.field(
-                window.title, String(format: "%.0f%% used", window.window.utilization ?? 0))
+            // The stale number is kept here rather than hidden: a report exists to say what
+            // the cache actually holds, and "95% used, but that window reset" is the shape
+            // of the bug someone would be filing.
+            let used = String(format: "%.0f%% used", window.window.utilization ?? 0)
+            report.field(window.title, window.window.isStale() ? used + " (stale)" : used)
         }
         report.field("remote hosts", "\(usage.remoteLimits.count)")
 
@@ -731,7 +734,10 @@ final class AppModel {
                 let resets = window.window.resetsAt.map {
                     " · resets \($0.formatted(.relative(presentation: .named)))"
                 } ?? ""
-                lines.append("  \(window.title.padding(toLength: 16, withPad: " ", startingAt: 0)) \(used) used\(resets)")
+                let state =
+                    window.window.isStale()
+                    ? "stale — waiting for a fresh render" : "\(used) used\(resets)"
+                lines.append("  \(window.title.padding(toLength: 16, withPad: " ", startingAt: 0)) \(state)")
             }
         } else if usage.limits?.limits.available == false {
             lines.append("quota          not applicable on this account")
@@ -742,8 +748,9 @@ final class AppModel {
             lines.append("quota @\(host)")
             for window in reading.limits.windows {
                 let used = window.window.utilization.map { String(format: "%.0f%%", $0) } ?? "?"
+                let state = window.window.isStale() ? "stale" : "\(used) used"
                 lines.append(
-                    "  \(window.title.padding(toLength: 16, withPad: " ", startingAt: 0)) \(used) used"
+                    "  \(window.title.padding(toLength: 16, withPad: " ", startingAt: 0)) \(state)"
                 )
             }
         }

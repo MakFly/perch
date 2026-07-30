@@ -166,10 +166,13 @@ struct UsageLimitsStrip: View {
                             .font(Theme.mono(9))
                             .foregroundStyle(Theme.tertiary)
                         // The colour always follows what is *spent*, whichever number is
-                        // printed: red has one meaning here, and it is not "12".
+                        // printed: red has one meaning here, and it is not "12". A stale
+                        // window has no colour to earn — there is no number under it.
                         Text(percentage(window.window))
                             .font(Theme.mono(9, .semibold))
-                            .foregroundStyle(tint(window.window.utilization ?? 0))
+                            .foregroundStyle(
+                                window.window.isStale()
+                                    ? Theme.tertiary : tint(window.window.utilization ?? 0))
                             .monospacedDigit()
                         // A percentage on its own does not answer the question people
                         // actually have at 90%, which is "how long until it comes back".
@@ -191,7 +194,10 @@ struct UsageLimitsStrip: View {
 
     private func short(_ id: String) -> String { Self.short(id) }
 
+    /// A dash, not a number, once the window has reset: whatever the last render said is
+    /// about the week that ended, and the next one is minutes away.
     static func percentage(_ window: RateLimitWindow, showsRemaining: Bool) -> String {
+        guard !window.isStale() else { return "—" }
         let value = showsRemaining ? (window.remaining ?? 100) : (window.utilization ?? 0)
         return String(format: "%.0f%%", value)
     }
@@ -231,8 +237,14 @@ private struct WindowBar: View {
 
     private var used: Double { window.window.utilization ?? 0 }
 
+    /// The window already reset, so the percentage describes the one that ended. The row
+    /// stays — dropping it would empty the panel into "not connected", which is a different
+    /// and wronger claim — but it says nothing it cannot back up until the next render.
+    private var isStale: Bool { window.window.isStale() }
+
     /// Green until it matters, amber when the end is in sight, red once it is spent.
     private var tint: Color {
+        if isStale { return Theme.tertiary }
         switch used {
         case ..<75: return Theme.active
         case ..<95: return Theme.warning
@@ -251,11 +263,17 @@ private struct WindowBar: View {
 
                 // The bar still fills with what is spent — a bar that empties as you use
                 // it would say the opposite of the colour beside it.
-                Text(String(format: "%.0f%%", showsRemaining ? 100 - used : used))
+                Text(isStale ? "—" : String(format: "%.0f%%", showsRemaining ? 100 - used : used))
                     .font(Theme.mono(10, .semibold))
                     .foregroundStyle(tint)
 
-                if let resets = window.window.resetsAt {
+                // "6 minutes ago" beside a percentage reads as a live window that happens
+                // to have just turned over; what it means is that the number is old.
+                if isStale {
+                    Text(t("waiting"))
+                        .font(Theme.mono(9))
+                        .foregroundStyle(Theme.tertiary)
+                } else if let resets = window.window.resetsAt {
                     Text(resets.formatted(.relative(presentation: .numeric)))
                         .font(Theme.mono(9))
                         .foregroundStyle(Theme.tertiary)
@@ -268,7 +286,7 @@ private struct WindowBar: View {
                         .fill(Theme.hairline)
                     Capsule()
                         .fill(tint)
-                        .frame(width: geometry.size.width * min(1, max(0, used / 100)))
+                        .frame(width: geometry.size.width * (isStale ? 0 : min(1, max(0, used / 100))))
                 }
             }
             .frame(height: 4)

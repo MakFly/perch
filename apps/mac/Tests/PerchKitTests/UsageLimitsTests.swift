@@ -38,7 +38,7 @@ private let payload = """
 
 @Test func tightestWindowIsTheOneClosestToRunningOut() throws {
     let limits = try #require(RateLimits.parse(payload))
-    #expect(limits.tightest?.id == "seven_day")
+    #expect(limits.tightest()?.id == "seven_day")
     #expect(limits.sevenDay?.remaining == 12)
 }
 
@@ -69,7 +69,7 @@ private let payload = """
     let limits = try #require(RateLimits.parse(raw))
 
     #expect(limits.windows.map(\.id) == ["five_hour", "claude-opus-5"])
-    #expect(limits.tightest?.id == "claude-opus-5")
+    #expect(limits.tightest()?.id == "claude-opus-5")
 }
 
 /// What a real statusline render actually delivers, captured from the bridge. It does not
@@ -89,7 +89,7 @@ private let payload = """
     #expect(limits.sevenDay?.resetsAt == Date(timeIntervalSince1970: 1_785_405_600))
     // A genuine zero is data, not a missing window: it must still be listed.
     #expect(limits.windows.map(\.id) == ["five_hour", "seven_day"])
-    #expect(limits.tightest?.id == "seven_day")
+    #expect(limits.tightest()?.id == "seven_day")
 }
 
 @Test func garbageIsRejectedRatherThanGuessed() {
@@ -131,4 +131,58 @@ private let payload = """
     #expect(
         RateLimitWindow(utilization: 50, resetsAt: now.addingTimeInterval(20))
             .timeLeft(from: now) == "1m")
+}
+
+// MARK: - Staleness
+
+/// Several sessions render through one bridge into one cache, and each sends the quota its
+/// own last API response carried. A session idle since yesterday therefore publishes
+/// yesterday's numbers today: a file written seconds ago holding a week that reset hours
+/// ago. The reset having passed is what gives it away.
+@Test func aWindowWhoseResetHasPassedIsStale() {
+    let now = Date(timeIntervalSince1970: 1_000_000)
+
+    #expect(RateLimitWindow(utilization: 95, resetsAt: now.addingTimeInterval(-60)).isStale(from: now))
+    #expect(!RateLimitWindow(utilization: 95, resetsAt: now.addingTimeInterval(60)).isStale(from: now))
+    // Nothing to date it by is not the same as knowing it is old.
+    #expect(!RateLimitWindow(utilization: 95, resetsAt: nil).isStale(from: now))
+}
+
+/// The notch summarises one window, and a week that already reset is not the one running
+/// out — however high the number it last reported.
+@Test func theTightestWindowSkipsStaleOnes() {
+    let now = Date(timeIntervalSince1970: 1_000_000)
+    let limits = RateLimits(
+        fiveHour: RateLimitWindow(utilization: 40, resetsAt: now.addingTimeInterval(3_600)),
+        sevenDay: RateLimitWindow(utilization: 95, resetsAt: now.addingTimeInterval(-360)))
+
+    #expect(limits.tightest(from: now)?.id == "five_hour")
+}
+
+/// With nothing current to point at there is no better answer, so the highest is still
+/// returned — the views draw it as unknown rather than as a percentage.
+@Test func everythingStaleStillPointsSomewhere() {
+    let now = Date(timeIntervalSince1970: 1_000_000)
+    let limits = RateLimits(
+        fiveHour: RateLimitWindow(utilization: 40, resetsAt: now.addingTimeInterval(-7_200)),
+        sevenDay: RateLimitWindow(utilization: 95, resetsAt: now.addingTimeInterval(-360)))
+
+    #expect(limits.tightest(from: now)?.id == "seven_day")
+}
+
+/// The bug this comes from: the week reset at noon, and five minutes later the panel still
+/// read 95% because an idle session had just replayed the old window.
+@Test func theWeekThatAlreadyResetIsNotStillAtNinetyFive() throws {
+    let raw = """
+        {"rate_limits":{"five_hour":{"used_percentage":0,"resets_at":1785340800},
+         "seven_day":{"used_percentage":95,"resets_at":1785405600}}}
+        """.data(using: .utf8)!
+    let limits = try #require(RateLimits.parse(raw))
+    // Both windows reset before this instant.
+    let now = Date(timeIntervalSince1970: 1_785_405_960)
+
+    #expect(limits.sevenDay?.isStale(from: now) == true)
+    #expect(limits.sevenDay?.timeLeft(from: now) == nil)
+    // The reading is still listed — dropping it would empty the panel into "not connected".
+    #expect(limits.windows.map(\.id) == ["five_hour", "seven_day"])
 }
