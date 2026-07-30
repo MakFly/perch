@@ -391,10 +391,17 @@ struct IdleView: View {
             HStack(spacing: 6) {
                 Spacer(minLength: 0)
                 if showsQuota {
-                    // The tightest window first, on the left, because it is the one that
-                    // ends your afternoon.
-                    UsageLimitsStrip(
-                        reading: quota, showsRemaining: showsRemaining, maximum: 1)
+                    // A creature, and the tightest window — the one that ends an afternoon.
+                    // The countdown is dropped here: at eleven characters a window it was
+                    // what pushed the chip onto a second line, and it is the half nobody
+                    // reads from across a room.
+                    HStack(spacing: IdleView.spriteGap) {
+                        IdleSprite()
+                        UsageLimitsStrip(
+                            reading: quota, showsRemaining: showsRemaining, maximum: 1,
+                            showsReset: false)
+                    }
+                    .fixedSize()
                 } else {
                     HStack(spacing: 3) {
                         // A sprite fights only for an agent that is doing something: a
@@ -426,7 +433,9 @@ struct IdleView: View {
                     // The week, on the other shoulder. Second because it moves slowly: at
                     // 8% on a Tuesday it is background, where the five-hour window is news.
                     UsageLimitsStrip(
-                        reading: quota, showsRemaining: showsRemaining, dropFirst: 1, maximum: 1)
+                        reading: quota, showsRemaining: showsRemaining, dropFirst: 1,
+                        maximum: 1, showsReset: false)
+                        .fixedSize()
                 }
                 // Loudest thing on the bar, and first: a held request is the only item here
                 // that is costing something while it is not read.
@@ -471,6 +480,14 @@ struct IdleView: View {
     /// creature reads as a mark, and at 24 it reads as itself.
     static let glyphPixel: CGFloat = 2.4
 
+    /// Between the resting creature and the window beside it.
+    static let spriteGap: CGFloat = 4
+
+    /// What the enclosing `HStack` puts behind each chip — 6pt on the left of the cutout,
+    /// 4 on the right. Counted in the width, because it is drawn whether or not anyone
+    /// remembered it: forgetting the 6 is what left the first chip a point short.
+    static let quotaGap: CGFloat = 6
+
     /// Sized to the content: one agent must not reserve room for four, and an empty strip
     /// must be exactly zero wide or it paints black shoulders beside the notch.
     ///
@@ -494,16 +511,22 @@ struct IdleView: View {
             let windows = windows(of: quota)
             guard !windows.isEmpty else { return 0 }
 
-            // Measured, not guessed. The window is sized before it draws, so an advance
-            // taken on faith is a last character clipped by the edge it is meant to sit
-            // inside — which is how the session count lost a digit once already.
-            func width(_ index: Int) -> CGFloat {
+            // Measured off the layout, not off a sentence. The window is sized before it
+            // draws, so a width taken on faith is a chip wrapped onto a second line inside
+            // the menu bar — which is exactly what a joined string bought: it counted two
+            // spaces where the `HStack` puts two 3pt gaps, and none of the 6pt the strip
+            // sits behind.
+            func chip(_ index: Int) -> CGFloat {
                 guard windows.indices.contains(index) else { return 0 }
-                return Theme.monoWidth(
-                    UsageLimitsStrip.label(for: windows[index], showsRemaining: showsRemaining),
-                    size: 9)
+                return UsageLimitsStrip.width(
+                    for: windows[index], showsRemaining: showsRemaining, showsReset: false)
             }
-            return max(width(0), width(1)) + inset
+            // No sheet installed, no room reserved: the two percentages close up rather
+            // than sitting either side of a hole.
+            let sprite = IdleSprite.sheet == nil ? 0 : IdleSprite.side + spriteGap
+            let left = sprite + chip(0) + quotaGap
+            let right = chip(1) + quotaGap
+            return max(left, right) + inset
         }
 
         // A sprite plus its 3pt gap, with a floor of 24 for the count pill — wide enough
@@ -526,6 +549,42 @@ struct IdleView: View {
     /// nothing, which is what keeps the cutout bare.
     static func windows(of reading: UsageLimitsReader.Reading?) -> [NamedWindow] {
         Array(reading?.limits.windows.prefix(2) ?? [])
+    }
+}
+
+/// The creature that keeps the cutout company when no agent does.
+///
+/// Its own sheet — `idle.png`, beside the agents' in `~/.perch/sprites` — because this one
+/// is not an agent: nothing is running, and drawing Claude's would say something untrue.
+/// Held on its first frame rather than played: a creature flapping its wings in the menu
+/// bar for hours is noise, and the bar is meant to be glanceable, not animated.
+///
+/// Nothing installed is nothing drawn, and the width follows: the two percentages simply
+/// close up. Perch ships no sheet — what would be in one is not ours to redistribute.
+struct IdleSprite: View {
+    /// The same 24pt box an agent's glyph occupies, so a strip that swaps one for the
+    /// other does not change height or jump.
+    static let side: CGFloat = AgentGlyph.width(pixel: IdleView.glyphPixel) - 3
+
+    static var sheet: SpriteSheet? {
+        if let cached { return cached }
+        let loaded = SpriteLocation.sheetURL(
+            named: "idle",
+            bundled: Bundle.main.url(
+                forResource: "idle", withExtension: "png", subdirectory: "Sprites")
+        ).flatMap(SpriteSheet.load)
+        cached = .some(loaded)
+        return loaded
+    }
+
+    /// Read once. A miss costs a directory lookup, and this is on the path of a view that
+    /// redraws with the clock.
+    nonisolated(unsafe) private static var cached: SpriteSheet??
+
+    var body: some View {
+        if let sheet = Self.sheet {
+            AnimatedSprite(sheet: sheet, side: Self.side, isPlaying: false)
+        }
     }
 }
 

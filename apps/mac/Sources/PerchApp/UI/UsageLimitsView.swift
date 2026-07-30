@@ -151,6 +151,13 @@ struct UsageLimitsStrip: View {
     /// hardware in between means one view cannot draw them all.
     var dropFirst = 0
     var maximum = 2
+    /// Whether to say when the window turns over.
+    ///
+    /// Off beside the cutout. `5h 2% 4h41m` is eleven characters of menu bar per window,
+    /// and the countdown is the half nobody reads from across a room — where "am I about
+    /// to be cut off" is answered by the number and its colour. It stays in the panel and
+    /// under the cursor, which is where a delay is worth reading.
+    var showsReset = true
 
     private var windows: [NamedWindow] {
         guard let reading else { return [] }
@@ -161,7 +168,7 @@ struct UsageLimitsStrip: View {
         if !windows.isEmpty {
             HStack(spacing: 8) {
                 ForEach(windows) { window in
-                    HStack(spacing: 3) {
+                    HStack(spacing: Self.spacing) {
                         Text(short(window.id))
                             .font(Theme.mono(9))
                             .foregroundStyle(Theme.tertiary)
@@ -176,7 +183,7 @@ struct UsageLimitsStrip: View {
                             .monospacedDigit()
                         // A percentage on its own does not answer the question people
                         // actually have at 90%, which is "how long until it comes back".
-                        if let left = window.window.timeLeft() {
+                        if showsReset, let left = window.window.timeLeft() {
                             Text(left)
                                 .font(Theme.mono(9))
                                 .foregroundStyle(Theme.tertiary)
@@ -213,14 +220,42 @@ struct UsageLimitsStrip: View {
         }
     }
 
-    /// The chip as one string, for measuring. Built from the same pieces the view draws so
-    /// the two cannot drift: a width measured from a different label is a wrong width.
-    static func label(for window: NamedWindow, showsRemaining: Bool = false) -> String {
+    /// The chip's pieces, in the order they are drawn.
+    static func pieces(
+        for window: NamedWindow, showsRemaining: Bool = false, showsReset: Bool = true
+    ) -> [String] {
         [short(window.id), percentage(window.window, showsRemaining: showsRemaining),
-         window.window.timeLeft()]
+         showsReset ? window.window.timeLeft() : nil]
             .compactMap { $0 }
+    }
+
+    /// The chip as one string, for anything that wants to read it rather than lay it out.
+    static func label(
+        for window: NamedWindow, showsRemaining: Bool = false, showsReset: Bool = true
+    ) -> String {
+        pieces(for: window, showsRemaining: showsRemaining, showsReset: showsReset)
             .joined(separator: " ")
     }
+
+    /// How wide that chip actually draws.
+    ///
+    /// Measured piece by piece with the gaps the `HStack` puts between them, rather than
+    /// from the joined string: a space is not three points, and the strip beside the cutout
+    /// is laid out in a window that was sized before it drew. Measuring the sentence
+    /// instead of the layout is what wrapped `4h41m` onto a second line inside the menu
+    /// bar.
+    static func width(
+        for window: NamedWindow, showsRemaining: Bool = false, showsReset: Bool = true
+    ) -> CGFloat {
+        let pieces = pieces(for: window, showsRemaining: showsRemaining, showsReset: showsReset)
+        guard !pieces.isEmpty else { return 0 }
+        let text = pieces.reduce(0) { $0 + Theme.monoWidth($1, size: 9) }
+        return text + CGFloat(pieces.count - 1) * spacing
+    }
+
+    /// The gap between a chip's own pieces. One number, used by the layout and by the
+    /// measurement, so the two cannot disagree.
+    static let spacing: CGFloat = 3
 
     private func tint(_ used: Double) -> Color {
         switch used {
