@@ -6,7 +6,7 @@
  * and the windows involved are small: a week of every builder, or a year of one.
  */
 
-import { and, eq, gte, lte, sql } from "drizzle-orm";
+import { and, eq, gte, lt, lte, sql } from "drizzle-orm";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
@@ -20,7 +20,7 @@ import {
   streakOf,
   type DayFact,
 } from "../aggregate.js";
-import { builders, usageDays } from "../db/schema.js";
+import { builders, rateLimits, usageDays } from "../db/schema.js";
 import {
   addDays,
   parseISODate,
@@ -37,6 +37,7 @@ import type {
   LeaderboardRepo,
   Profile,
   PublishDay,
+  RateVerdict,
   RegisterInput,
   Registration,
 } from "../types.js";
@@ -103,6 +104,46 @@ export class PostgresRepo implements LeaderboardRepo {
       .where(eq(builders.tokenHash, digest))
       .limit(1);
     return found[0]?.id ?? null;
+  }
+
+  /**
+   * One upsert, which is the whole limiter: the counter is incremented and read back in a
+   * single statement, so two invocations landing at once cannot both read "0 so far".
+   *
+   * It fails **open**. The window between deploying this and running the migration is a
+   * window where the table does not exist, and a limiter that answers 500 when its own
+   * storage is missing takes the API down in order to protect it. The failure is logged
+   * rather than swallowed, because "the limiter is off" is not something to discover from
+   * the bill.
+   */
+  async take(bucket: string, limit: number, windowSeconds: number): Promise<RateVerdict> {
+    const now = Date.now();
+    const window = Math.max(1, Math.floor(windowSeconds)) * 1000;
+    const startedAt = Math.floor(now / window) * window;
+    const windowStart = new Date(startedAt);
+    const retryAfter = Math.max(1, Math.ceil((startedAt + window - now) / 1000));
+
+    try {
+      const [row] = await this.db
+        .insert(rateLimits)
+        .values({ bucket, windowStart, hits: 1 })
+        .onConflictDoUpdate({
+          target: [rateLimits.bucket, rateLimits.windowStart],
+          set: { hits: sql`${rateLimits.hits} + 1` },
+        })
+        .returning({ hits: rateLimits.hits });
+
+      // A bucket's earlier windows are dead the moment a new one opens, and deleting them
+      // here is what keeps the table proportional to what is active.
+      await this.db
+        .delete(rateLimits)
+        .where(and(eq(rateLimits.bucket, bucket), lt(rateLimits.windowStart, windowStart)));
+
+      return { allowed: (row?.hits ?? 1) <= limit, retryAfter };
+    } catch (error) {
+      console.error("rate limit unavailable — allowing the request", error);
+      return { allowed: true, retryAfter: 0 };
+    }
   }
 
   async publish(builderId: string, days: PublishDay[]): Promise<number> {

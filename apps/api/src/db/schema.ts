@@ -70,5 +70,30 @@ export const usageDays = pgTable(
   ],
 );
 
+/**
+ * One counter per (bucket, window), which is the whole rate limiter.
+ *
+ * It lives in Postgres because there is nowhere else to put it: every request is a fresh
+ * serverless invocation, so an in-process counter counts to one and resets. A fixed window
+ * rather than a sliding one — a sliding window needs the timestamps of every hit, and the
+ * question here is "is someone hammering this", which a counter answers.
+ *
+ * Rows for a bucket's older windows are deleted as that bucket is hit again, so the table
+ * stays proportional to what is currently active rather than to everything that ever was.
+ */
+export const rateLimits = pgTable(
+  "rate_limits",
+  {
+    /** What is being limited: `register:<ip>`, `publish:<builder id>`. */
+    bucket: text("bucket").notNull(),
+    windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+    hits: integer("hits").notNull().default(0),
+  },
+  (table) => [
+    primaryKey({ columns: [table.bucket, table.windowStart] }),
+    index("rate_limits_window_idx").on(table.windowStart),
+  ],
+);
+
 export type BuilderRow = typeof builders.$inferSelect;
 export type UsageDayRow = typeof usageDays.$inferSelect;

@@ -14,6 +14,31 @@ const MAX_OFFSET = 260;
 /** One publish carries a rolling window, not a lifetime. */
 const MAX_PUBLISH_DAYS = 800;
 
+/**
+ * What one address, or one builder, may do per hour.
+ *
+ * Registration is open — anyone who runs Perch can join, and requiring an account to
+ * appear on a leaderboard of people who already run an agent locally is a hoop for the
+ * wrong person. Open is not the same as unlimited, though: without these, one script can
+ * take every good handle and fill the board with numbers nobody earned.
+ *
+ * The publish allowance is deliberately far above what the app does. `LeaderboardModel`
+ * republishes a rolling window at most once an hour, so twenty is room for retries, a
+ * manual publish, and a second Mac on the same connection, without ever being the reason
+ * a real client fails.
+ */
+const LIMITS = {
+  /** Five an hour rather than one: an office or a household is one address to us. */
+  register: { perHour: 5, perDay: 20 },
+  /** Per builder, after the token has been recognised. */
+  publish: { perHour: 20 },
+  /** Per address, before it has been: unauthorised floods cost a database round trip. */
+  publishByAddress: { perHour: 60 },
+} as const;
+
+const HOUR = 3_600;
+const DAY = 86_400;
+
 export interface AppOptions {
   repo: LeaderboardRepo;
   version: string;
@@ -63,6 +88,12 @@ export function createApp({ repo, version }: AppOptions): Hono {
   });
 
   app.post("/v1/builders", async (c) => {
+    const address = addressOf(c);
+    const limited =
+      (await hold(c, repo, `register:hour:${address}`, LIMITS.register.perHour, HOUR)) ??
+      (await hold(c, repo, `register:day:${address}`, LIMITS.register.perDay, DAY));
+    if (limited) return limited;
+
     const body = await readJSON(c.req.raw);
     if (!body || typeof body.handle !== "string") {
       return c.json({ error: "handle is required" }, 400);
@@ -85,11 +116,25 @@ export function createApp({ repo, version }: AppOptions): Hono {
   });
 
   app.post("/v1/publish", async (c) => {
+    // Counted before the token is looked up, so a flood of unauthorised writes cannot
+    // spend a database round trip each.
+    const flooding = await hold(
+      c,
+      repo,
+      `publish:address:${addressOf(c)}`,
+      LIMITS.publishByAddress.perHour,
+      HOUR,
+    );
+    if (flooding) return flooding;
+
     const token = bearer(c.req.header("Authorization"));
     if (!token) return c.json({ error: "missing bearer token" }, 401);
 
     const builderId = await repo.authenticate(token).catch(() => null);
     if (!builderId) return c.json({ error: "unknown token" }, 401);
+
+    const tooOften = await hold(c, repo, `publish:${builderId}`, LIMITS.publish.perHour, HOUR);
+    if (tooOften) return tooOften;
 
     const body = await readJSON(c.req.raw);
     const days = parseDays(body?.days);
@@ -108,6 +153,44 @@ export function createApp({ repo, version }: AppOptions): Hono {
   app.notFound((c) => c.json({ error: "not found" }, 404));
 
   return app;
+}
+
+// MARK: - Limiting
+
+/**
+ * Counts the request, and returns the response to send *instead* when it is over the line.
+ * Null means carry on — so the call site reads as "if there is a refusal, return it".
+ */
+async function hold(
+  c: Context,
+  repo: LeaderboardRepo,
+  bucket: string,
+  limit: number,
+  windowSeconds: number,
+): Promise<Response | null> {
+  const verdict = await repo.take(bucket, limit, windowSeconds);
+  if (verdict.allowed) return null;
+  // The number, not just the refusal: a client that is told when to come back can, and
+  // one that is not will retry immediately and make it worse.
+  c.header("Retry-After", String(verdict.retryAfter));
+  return c.json({ error: "too many requests", retryAfter: verdict.retryAfter }, 429);
+}
+
+/**
+ * Who a request is counted against.
+ *
+ * `x-vercel-forwarded-for` is written by the platform and cannot be set by the caller. The
+ * other two can be, so they are a fallback for running this somewhere else rather than
+ * something to trust on Vercel. No address at all — `bun run dev` — counts as one caller,
+ * which on a machine where you are the only caller is exactly right.
+ */
+function addressOf(c: Context): string {
+  const header =
+    c.req.header("x-vercel-forwarded-for") ??
+    c.req.header("x-real-ip") ??
+    c.req.header("x-forwarded-for");
+  const first = header?.split(",")[0]?.trim();
+  return first && first.length <= 64 ? first : "local";
 }
 
 // MARK: - Parsing

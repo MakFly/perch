@@ -104,6 +104,12 @@ export interface Registration {
   token: string;
 }
 
+/** What the limiter says about one request. `retryAfter` is in whole seconds. */
+export interface RateVerdict {
+  allowed: boolean;
+  retryAfter: number;
+}
+
 /**
  * What the routes are allowed to ask of storage.
  *
@@ -118,6 +124,13 @@ export interface LeaderboardRepo {
   /** Returns the builder id for a bearer token, or null. */
   authenticate(token: string): Promise<string | null>;
   publish(builderId: string, days: PublishDay[]): Promise<number>;
+  /**
+   * Counts one hit against `bucket` and says whether it is still within the allowance.
+   *
+   * Called before the work it protects, so it is on the hot path of every write: one
+   * upsert, no transaction, no read-then-write race.
+   */
+  take(bucket: string, limit: number, windowSeconds: number): Promise<RateVerdict>;
   leaderboard(board: BoardKind, period: Period, you: string | null): Promise<Leaderboard>;
   profile(handle: string, range: ProfileRange): Promise<Profile | null>;
   close(): Promise<void>;

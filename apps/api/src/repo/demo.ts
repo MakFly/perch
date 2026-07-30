@@ -36,6 +36,7 @@ import type {
   LeaderboardRepo,
   Profile,
   PublishDay,
+  RateVerdict,
   Registration,
   RegisterInput,
 } from "../types.js";
@@ -103,6 +104,8 @@ export class DemoRepo implements LeaderboardRepo {
   private readonly today: string;
   private readonly facts: DayFact[];
   private readonly builders = new Map<string, BuilderPublic>();
+  /** The rate limiter's counters, one live window per bucket. */
+  private readonly hits = new Map<string, { startedAt: number; hits: number }>();
 
   constructor(now = new Date()) {
     this.today = toISODate(now);
@@ -187,6 +190,24 @@ export class DemoRepo implements LeaderboardRepo {
 
   async publish(_builderId: string, _days: PublishDay[]): Promise<number> {
     throw new DemoReadOnly();
+  }
+
+  /**
+   * In memory, which is honest about what this repo is: a demo deployment is one process
+   * and one seeded dataset. It exists so the routes have one limiter to call whichever
+   * storage answered, and so the limits can be tested without a database.
+   */
+  async take(bucket: string, limit: number, windowSeconds: number): Promise<RateVerdict> {
+    const now = Date.now();
+    const window = Math.max(1, Math.floor(windowSeconds)) * 1000;
+    const startedAt = Math.floor(now / window) * window;
+    const retryAfter = Math.max(1, Math.ceil((startedAt + window - now) / 1000));
+
+    const seen = this.hits.get(bucket);
+    const hits = seen && seen.startedAt === startedAt ? seen.hits + 1 : 1;
+    this.hits.set(bucket, { startedAt, hits });
+
+    return { allowed: hits <= limit, retryAfter };
   }
 
   async leaderboard(board: BoardKind, period: Period, you: string | null): Promise<Leaderboard> {

@@ -28,8 +28,11 @@ const handle = `t-${stamp}`;
 afterAll(async () => {
   if (!repo) return;
   // Leave the shared database as it was found.
-  await (repo as unknown as { sql: (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown> })
-    .sql`DELETE FROM builders WHERE handle LIKE 't-%'`;
+  const raw = repo as unknown as {
+    sql: (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
+  };
+  await raw.sql`DELETE FROM builders WHERE handle LIKE 't-%'`;
+  await raw.sql`DELETE FROM rate_limits WHERE bucket LIKE 'test:%'`;
   await repo.close();
 });
 
@@ -44,12 +47,24 @@ async function readJSON(path: string) {
   return (await response.json()) as any;
 }
 
+/**
+ * Every call comes from its own address.
+ *
+ * Registration is rate-limited per address, and these tests register a dozen builders in a
+ * few milliseconds — which is precisely the shape the limiter exists to refuse. Giving each
+ * request a distinct caller keeps that policy out of tests that are about publishing;
+ * `limits.test.ts` is where it is on trial.
+ */
+let caller = 0;
+
 async function post(path: string, body: unknown, token?: string) {
+  caller += 1;
   const response = await app!.fetch(
     new Request(`http://local${path}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "x-vercel-forwarded-for": `198.51.100.${caller % 250}`,
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify(body),
@@ -222,5 +237,31 @@ suite("publish is authoritative for its window", () => {
 
     const board = await readJSON(`/v1/leaderboard?board=week&you=${handle}-window`);
     expect(board.you?.outputTokens).toBe(811);
+  });
+
+  /**
+   * The property a map cannot have. Every request is its own serverless invocation, so the
+   * counter is only worth anything if ten of them landing together still add up to ten —
+   * which is why it is one upsert that returns the new count, and not a read followed by a
+   * write.
+   */
+  test("counts hold when the requests arrive at once", async () => {
+    const bucket = `test:${stamp}:concurrent`;
+    const verdicts = await Promise.all(
+      Array.from({ length: 10 }, () => repo!.take(bucket, 4, 3_600)),
+    );
+
+    expect(verdicts.filter((v) => v.allowed).length).toBe(4);
+    expect(verdicts.every((v) => v.retryAfter > 0)).toBe(true);
+  });
+
+  test("a window that has passed does not count against the one running", async () => {
+    const bucket = `test:${stamp}:window`;
+    // A one-second window, waited out: the second hit opens a new one rather than adding
+    // to a full one.
+    expect((await repo!.take(bucket, 1, 1)).allowed).toBe(true);
+    expect((await repo!.take(bucket, 1, 1)).allowed).toBe(false);
+    await new Promise((resolve) => setTimeout(resolve, 1_100));
+    expect((await repo!.take(bucket, 1, 1)).allowed).toBe(true);
   });
 });

@@ -169,6 +169,14 @@ reported rather than reached into.
 Nothing leaves the machine unless you opt in to the leaderboard, and then only counters:
 token totals, model, time bucket. Prompts, file paths, project names and commands never do.
 
+Joining needs no account — anyone running Perch can take a handle and start publishing.
+Open is not unlimited, though: registration is capped per address (5 an hour, 20 a day) and
+publishing per builder (20 an hour, against an app that publishes at most once), so one
+script cannot take every good handle or fill the board with numbers nobody earned. Reading
+the board is never limited; that is what it is for. The counters live in the database, in
+`rate_limits` — **apply the migrations before deploying the API**, or the limiter fails open
+and says so in the logs.
+
 ## Layout
 
 ```
