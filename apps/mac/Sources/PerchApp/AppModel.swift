@@ -128,7 +128,9 @@ final class AppModel {
     /// Answers the switcher's events. Kept here rather than in the view so the shortcut
     /// works whether or not the panel happens to be on screen.
     private func switcherEvent(_ event: SessionSwitcher.Event) {
-        switcher.count = activity.activeSessions.count
+        // The list the panel draws, because the switcher indexes into it: cycling through a
+        // longer list than the one on screen selects a card nobody can see.
+        switcher.count = activity.visibleSessions.count
         let outcome = switcher.handle(event)
         // Watch keys exactly while there is something to steer, and stop the moment there
         // is not — a monitor left installed swallows Escape for the whole app.
@@ -137,7 +139,7 @@ final class AppModel {
         case .open, .moved:
             notch.expand()
         case .jump(let index):
-            let sessions = activity.activeSessions
+            let sessions = activity.visibleSessions
             if sessions.indices.contains(index) {
                 TerminalJumper.jump(to: sessions[index].client)
             }

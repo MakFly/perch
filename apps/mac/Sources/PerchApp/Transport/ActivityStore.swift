@@ -179,6 +179,11 @@ final class ActivityStore {
 
     var activeSessions: [SessionSnapshot] { tracker.active }
 
+    /// What the panel draws: everything tracked, less the turns that have ended. The
+    /// diagnostics keep reading `activeSessions` — a report exists to show what is there,
+    /// not what is worth looking at.
+    var visibleSessions: [SessionSnapshot] { tracker.visible }
+
     /// Holds the roster still while someone is reading it, and lets go afterwards.
     ///
     /// Called from the panel's own visibility, so "while someone is reading it" is exactly

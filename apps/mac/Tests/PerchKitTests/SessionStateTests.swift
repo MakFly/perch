@@ -322,6 +322,81 @@ private let epoch = Date(timeIntervalSince1970: 1_700_000_000)
     #expect(tracker.active.map(\.id) == ["c"])
 }
 
+// MARK: - What the panel shows
+
+/// "Done" was an honest label for a turn that ended, and a row of them is still a list of
+/// things already dealt with. The session stays tracked — it is the row that goes.
+@Test func aFinishedTurnLeavesTheListButNotTheTracker() {
+    var tracker = SessionTracker()
+    tracker.record(id: "a", kind: "PreToolUse", at: epoch)
+    tracker.record(id: "b", kind: "PreToolUse", at: epoch.addingTimeInterval(60))
+    #expect(tracker.visible.map(\.id) == ["a", "b"])
+
+    tracker.record(id: "a", kind: "Stop", at: epoch.addingTimeInterval(120))
+    #expect(tracker.visible.map(\.id) == ["b"])
+    // Still there: the diagnostics report what is tracked, not what is worth looking at.
+    #expect(tracker.active.map(\.id) == ["a", "b"])
+    #expect(tracker.sessions.count == 2)
+}
+
+/// Hidden rather than dropped, so the next prompt puts the row back where it was. Dropping
+/// the session would restart it at the bottom of the list, nameless, once per turn.
+@Test func theNextTurnBringsTheRowBackInItsPlace() {
+    var tracker = SessionTracker()
+    tracker.record(id: "a", kind: "UserPromptSubmit", prompt: "fix the bridge", at: epoch)
+    tracker.record(id: "b", kind: "PreToolUse", at: epoch.addingTimeInterval(60))
+    tracker.record(id: "a", kind: "Stop", at: epoch.addingTimeInterval(120))
+    #expect(tracker.visible.map(\.id) == ["b"])
+
+    tracker.record(id: "a", kind: "UserPromptSubmit", at: epoch.addingTimeInterval(180))
+    #expect(tracker.visible.map(\.id) == ["a", "b"])
+    #expect(tracker.sessions["a"]?.startedAt == epoch)
+    #expect(tracker.sessions["a"]?.title == "fix the bridge")
+}
+
+/// A failure is news you may have missed, and everything blocked on a person is the
+/// opposite of finished. Only the clean end of a turn goes.
+@Test func onlyACleanEndingDisappears() {
+    var tracker = SessionTracker()
+    tracker.record(id: "failed", kind: "StopFailure", at: epoch)
+    tracker.record(id: "asks", kind: "PermissionRequest", tool: "Bash", at: epoch)
+    tracker.record(id: "answers", kind: "PermissionRequest", tool: "AskUserQuestion", at: epoch)
+    tracker.record(
+        id: "waiting", kind: "Notification", message: "Claude is waiting for your input",
+        at: epoch)
+
+    #expect(tracker.visible.map(\.id).sorted() == ["answers", "asks", "failed"])
+}
+
+/// The row must not evaporate under the cursor: a turn ending while the panel is open is a
+/// removal like any other, and it waits until you look away.
+@Test func aTurnEndingUnderTheCursorKeepsItsRowUntilYouLookAway() {
+    var tracker = SessionTracker()
+    tracker.record(id: "a", kind: "PreToolUse", at: epoch)
+
+    tracker.hold()
+    tracker.record(id: "a", kind: "Stop", at: epoch.addingTimeInterval(10))
+    #expect(tracker.visible.map(\.id) == ["a"])
+
+    tracker.release(now: epoch.addingTimeInterval(20))
+    #expect(tracker.visible.isEmpty)
+}
+
+/// And one that both starts and finishes while you are reading: it earned its row when it
+/// appeared, so it keeps it for the rest of the hold rather than blinking out.
+@Test func aSessionThatComesAndGoesDuringAHoldStillHoldsStill() {
+    var tracker = SessionTracker()
+    tracker.record(id: "a", kind: "PreToolUse", at: epoch)
+    tracker.hold()
+
+    tracker.record(id: "b", kind: "PreToolUse", at: epoch.addingTimeInterval(10))
+    tracker.record(id: "b", kind: "Stop", at: epoch.addingTimeInterval(20))
+    #expect(tracker.visible.map(\.id) == ["a", "b"])
+
+    tracker.release(now: epoch.addingTimeInterval(30))
+    #expect(tracker.visible.map(\.id) == ["a"])
+}
+
 /// A session starting appends. It must not push the list someone is reading downward.
 @Test func aNewSessionArrivesAtTheEnd() {
     var tracker = SessionTracker()

@@ -164,7 +164,7 @@ struct NotchRootView: View {
         case .peek:
             PeekView(
                 notch: controller.geometry.size,
-                sessions: model.activity.activeSessions,
+                sessions: model.activity.visibleSessions,
                 fallback: model.activity.events.first?.detail ?? t("waiting for Claude Code"),
                 tokens: model.usage.today.totalTokens.compactTokens,
                 cost: model.usage.today.cost.compactCost)
@@ -328,12 +328,15 @@ struct IdleReading: Equatable {
 
     /// Live, not *working*. This counted working sessions until it was pointed out that a
     /// CLI waiting for an answer is exactly the one you want to see from across the room —
-    /// and it was invisible: the moment a turn ended, or a permission card went up, the
-    /// session left the strip and the count went down. "How many agents do I have running"
-    /// is the question this bar exists to answer, and a session waiting on you is running.
+    /// and it was invisible: the moment a permission card went up, the session left the
+    /// strip and the count went down. "How many agents do I have running" is the question
+    /// this bar exists to answer, and a session waiting on you is running.
+    ///
+    /// A session whose turn has *ended* is the one case that is not: it counts nothing,
+    /// which is why the strip counts the same list the panel draws.
     @MainActor
     init(_ activity: ActivityStore) {
-        let sessions = activity.activeSessions
+        let sessions = activity.visibleSessions
         for session in sessions where !agents.contains(where: { $0.agent == session.agent }) {
             agents.append(
                 (session.agent, sessions.contains { $0.agent == session.agent && $0.isWorking }))
@@ -705,7 +708,7 @@ private struct ActivityList: View {
                 ScrollViewReader { scroller in
                 LazyVStack(alignment: .leading, spacing: Theme.rowSpacing) {
                     ForEach(
-                        Array(activity.activeSessions.enumerated()), id: \.element.id
+                        Array(activity.visibleSessions.enumerated()), id: \.element.id
                     ) { position, session in
                         SessionCardView(
                             session: session,
@@ -738,10 +741,10 @@ private struct ActivityList: View {
                 }
                 .onChange(of: model.switcher.index) { _, index in
                     guard model.switcher.isOpen,
-                        activity.activeSessions.indices.contains(index)
+                        activity.visibleSessions.indices.contains(index)
                     else { return }
                     withAnimation(.easeOut(duration: 0.12)) {
-                        scroller.scrollTo(activity.activeSessions[index].id, anchor: .center)
+                        scroller.scrollTo(activity.visibleSessions[index].id, anchor: .center)
                     }
                 }
                 }

@@ -287,6 +287,9 @@ public struct SessionTracker: Sendable {
         }
 
         sessions[id] = session
+        // A session that turns up while the list is held earns its row for the rest of the
+        // hold: one that starts and finishes under the cursor should not blink out of it.
+        if holdsSteady, session.status != .idle { heldVisible.insert(id) }
         prune(now: date)
     }
 
@@ -362,11 +365,20 @@ public struct SessionTracker: Sendable {
     /// Removals that arrived while the list was held.
     private var withheld: Set<String> = []
 
-    public mutating func hold() { holdsSteady = true }
+    /// Rows that must stay on screen for as long as the list is held, because they were on
+    /// it when someone started reading. A turn finishing is a removal like any other: it
+    /// waits until you look away.
+    private var heldVisible: Set<String> = []
+
+    public mutating func hold() {
+        holdsSteady = true
+        heldVisible = Set(visible.map(\.id))
+    }
 
     /// Lets go, and applies everything that was withheld.
     public mutating func release(now: Date = .now) {
         holdsSteady = false
+        heldVisible = []
         for id in withheld { sessions.removeValue(forKey: id) }
         withheld = []
         prune(now: now)
@@ -404,6 +416,22 @@ public struct SessionTracker: Sendable {
         sessions.values.sorted {
             ($0.startedAt, $0.id) < ($1.startedAt, $1.id)
         }
+    }
+
+    /// What the panel shows, which is less than what is tracked.
+    ///
+    /// A turn that ended is not something to look at. "Done" was the honest label for it,
+    /// but a row that says the work is over still takes the same space as one where it is
+    /// going on, and a screen of them is a list of things you have already dealt with.
+    ///
+    /// Hidden rather than removed: the snapshot stays, so the next prompt brings the row
+    /// back where it was, with its title and its place in the order. Dropping the session
+    /// would restart it at the bottom of the list, nameless, once per turn.
+    ///
+    /// A failure keeps its row. So does everything blocked on a person — that is the
+    /// opposite of finished.
+    public var visible: [SessionSnapshot] {
+        active.filter { $0.status != .idle || heldVisible.contains($0.id) }
     }
 
     public var workingCount: Int {
