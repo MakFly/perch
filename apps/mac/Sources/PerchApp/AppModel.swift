@@ -199,6 +199,9 @@ final class AppModel {
         }
         usage.start()
         scenes.start()
+        // Put the uninstaller somewhere the Trash cannot reach. Nobody thinks about this
+        // until the moment the app is already gone, which is the moment it is too late.
+        RepoScripts.stashUninstaller()
 
         // The conversation on the cards is only worth keeping current while someone can
         // see it. Closed, this costs nothing at all.

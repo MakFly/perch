@@ -983,6 +983,84 @@ private struct AboutPane: View {
             Text("Settings live in ~/.perch — quiet.json and admission.json.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            Divider()
+            UninstallRow()
+        }
+    }
+}
+
+/// Uninstalling, from inside the app, because that is where someone looks for it.
+///
+/// Dragging Perch to the Trash removes the app and nothing else: fourteen hook entries go
+/// on pointing at a binary that is no longer there, the statusline bridge goes on wrapping
+/// your statusline, and the uninstaller that would have fixed both went into the Trash with
+/// the bundle it lives in. The order that works — uninstall, *then* delete — is the
+/// opposite of the macOS reflex, so the button is the one place it can be offered at the
+/// right moment.
+private struct UninstallRow: View {
+    @State private var outcome: String?
+
+    private var script: URL? {
+        let stashed = RepoScripts.stashedUninstaller
+        // The copy outside the bundle first: the script deletes Perch.app, and a shell
+        // reading itself out of a directory being removed is not something to rely on.
+        if FileManager.default.isExecutableFile(atPath: stashed.path) { return stashed }
+        return RepoScripts.url(of: "uninstall.sh")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Button(t("Uninstall Perch…")) { confirm() }
+                    .disabled(script == nil)
+                Text(
+                    t(
+                        "Removes the hooks, restores your statusline, and deletes Perch. "
+                            + "Dragging the app to the Trash does none of that.")
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            if let outcome {
+                Text(outcome).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func confirm() {
+        guard let script else { return }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = t("Uninstall Perch?")
+        // What it will do, in the order it will do it, rather than "are you sure".
+        alert.informativeText = t(
+            "Perch will quit, its hooks will be removed from Claude Code and Codex, your "
+                + "original statusline will be restored, and the app will be deleted.\n\n"
+                + "Your token history is kept, and every settings file is backed up before "
+                + "it is changed.\n\n%@",
+            script.path)
+        alert.addButton(withTitle: t("Uninstall"))
+        alert.addButton(withTitle: t("Cancel"))
+        alert.addButton(withTitle: t("Copy the command"))
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            let log = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("perch-uninstall.log")
+            // Detached: the script quits Perch a second from now, and waiting for it would
+            // be waiting from inside the process it is about to kill.
+            if RepoScripts.start(script, ["--yes"], log: log) {
+                outcome = t("Uninstalling — Perch will quit. Output: %@", log.path)
+            } else {
+                outcome = t("Could not start the uninstaller. Run it yourself: %@", script.path)
+            }
+        case .alertThirdButtonReturn:
+            RepoScripts.copyToPasteboard("\(script.path) --yes")
+            outcome = t("Copied. Run it in a terminal.")
+        default:
+            break
         }
     }
 }

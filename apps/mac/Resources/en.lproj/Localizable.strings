@@ -166,3 +166,14 @@
 "Claude Code" = "Claude Code";
 "Notify me when a turn ends somewhere I cannot see" = "Notify me when a turn ends somewhere I cannot see";
 "A macOS notification, silent — Perch already owns the sound. It stays quiet in a quiet scene, during quiet hours, and while you are looking at the terminal that raised it. Clicking it jumps there." = "A macOS notification, silent — Perch already owns the sound. It stays quiet in a quiet scene, during quiet hours, and while you are looking at the terminal that raised it. Clicking it jumps there.";
+
+/* Uninstalling, from the About pane */
+"Uninstall Perch…" = "Uninstall Perch…";
+"Removes the hooks, restores your statusline, and deletes Perch. Dragging the app to the Trash does none of that." = "Removes the hooks, restores your statusline, and deletes Perch. Dragging the app to the Trash does none of that.";
+"Uninstall Perch?" = "Uninstall Perch?";
+"Perch will quit, its hooks will be removed from Claude Code and Codex, your original statusline will be restored, and the app will be deleted.\n\nYour token history is kept, and every settings file is backed up before it is changed.\n\n%@" = "Perch will quit, its hooks will be removed from Claude Code and Codex, your original statusline will be restored, and the app will be deleted.\n\nYour token history is kept, and every settings file is backed up before it is changed.\n\n%@";
+"Uninstall" = "Uninstall";
+"Cancel" = "Cancel";
+"Uninstalling — Perch will quit. Output: %@" = "Uninstalling — Perch will quit. Output: %@";
+"Could not start the uninstaller. Run it yourself: %@" = "Could not start the uninstaller. Run it yourself: %@";
+"Copied. Run it in a terminal." = "Copied. Run it in a terminal.";

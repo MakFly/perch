@@ -233,3 +233,14 @@
 "Copied. Run it in the repository, then restart your sessions." = "Copiée. Lance-la dans le dépôt, puis redémarre tes sessions.";
 "Connected. Restart your open Claude Code sessions — the statusline is read when one starts." = "Connecté. Redémarre tes sessions Claude Code ouvertes — la statusline est lue au démarrage d'une session.";
 "Could not run the bridge. See ./scripts/usage-bridge.sh --status." = "Le pont n'a pas pu être lancé. Voir ./scripts/usage-bridge.sh --status.";
+
+/* Désinstallation, depuis le volet À propos */
+"Uninstall Perch…" = "Désinstaller Perch…";
+"Removes the hooks, restores your statusline, and deletes Perch. Dragging the app to the Trash does none of that." = "Retire les hooks, restaure ta statusline et supprime Perch. Mettre l'app à la corbeille ne fait rien de tout ça.";
+"Uninstall Perch?" = "Désinstaller Perch ?";
+"Perch will quit, its hooks will be removed from Claude Code and Codex, your original statusline will be restored, and the app will be deleted.\n\nYour token history is kept, and every settings file is backed up before it is changed.\n\n%@" = "Perch va quitter, ses hooks seront retirés de Claude Code et de Codex, ta statusline d'origine sera restaurée, et l'app sera supprimée.\n\nTon historique de jetons est conservé, et chaque fichier de réglages est sauvegardé avant d'être modifié.\n\n%@";
+"Uninstall" = "Désinstaller";
+"Cancel" = "Annuler";
+"Uninstalling — Perch will quit. Output: %@" = "Désinstallation en cours — Perch va quitter. Sortie : %@";
+"Could not start the uninstaller. Run it yourself: %@" = "Impossible de lancer le désinstalleur. Lance-le toi-même : %@";
+"Copied. Run it in a terminal." = "Copiée. Lance-la dans un terminal.";

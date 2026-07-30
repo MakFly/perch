@@ -63,6 +63,16 @@ BRIDGE="$PERCH_HOME/bin/perch-statusline"
 ORIGINAL_STATUSLINE="$PERCH_HOME/statusline-original.json"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Where the app said it was, written by Perch at every launch. Read now rather than at
+# step 9, because step 8 deletes the file it is written in.
+#
+# The guesses below cover the two places people put an app; this covers everywhere else —
+# a bundle on the Desktop, a development build, a copy that never moved out of ~/Downloads.
+RECORDED_APP=""
+if [ -f "$PERCH_HOME/app-path" ]; then
+  RECORDED_APP="$(head -1 "$PERCH_HOME/app-path" 2>/dev/null || true)"
+fi
+
 if [ "$APPLY" -eq 0 ]; then
   warn "dry run — nothing will be changed. Re-run with --yes to apply."
 fi
@@ -369,11 +379,18 @@ fi
 # --- 9. The app itself -------------------------------------------------------------
 
 APP_FOUND=0
+SEEN=""
 for app in \
+  "$RECORDED_APP" \
   "/Applications/Perch.app" \
   "$HOME/Applications/Perch.app" \
   "$SCRIPT_DIR/../apps/mac/build/Perch.app"; do
+  [ -n "$app" ] || continue
   [ -d "$app" ] || continue
+  # The recorded path is often one of the guesses below it; deleting it twice would report
+  # the same bundle twice.
+  case "$SEEN" in *"|$app|"*) continue ;; esac
+  SEEN="$SEEN|$app|"
   APP_FOUND=1
   act "delete $app" && rm -rf "$app"
 done
