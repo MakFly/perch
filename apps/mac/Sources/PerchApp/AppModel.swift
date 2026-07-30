@@ -213,11 +213,12 @@ final class AppModel {
                 // The quota was only ever re-read when a hook fired, so a panel opened on a
                 // quiet machine showed whatever the last tool call left behind — minutes
                 // old, and looking live. It moves while nothing here is running, so it is
-                // watched while it is being looked at.
-                usage.startWatchingLimits()
+                // watched all the time — quickly while it is being read, and back to a
+                // slow tick for the resting bar when the panel closes.
+                usage.startWatchingLimits(every: UsageModel.watchedInterval)
             } else {
                 transcripts.stop()
-                usage.stopWatchingLimits()
+                usage.startWatchingLimits(every: UsageModel.restingInterval)
             }
         }
 

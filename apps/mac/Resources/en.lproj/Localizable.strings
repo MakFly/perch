@@ -106,6 +106,7 @@
 "Needs ⌃, ⌥ or ⌘" = "Needs ⌃, ⌥ or ⌘";
 "Notch" = "Notch";
 "Reset to what macOS reports" = "Reset to what macOS reports";
+"Show the plan beside the cutout when nothing is running" = "Show the plan beside the cutout when nothing is running";
 "Idle sessions" = "Idle sessions";
 "Forget a silent session after" = "Forget a silent session after";
 "Never" = "Never";

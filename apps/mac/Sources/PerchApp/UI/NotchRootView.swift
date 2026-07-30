@@ -121,7 +121,14 @@ struct NotchRootView: View {
     /// The controller needs it too: it is what the cursor is tested against while idle.
     private var idleFlank: CGFloat {
         IdleView.flank(
-            for: IdleReading(model.activity), waiting: model.permissions.waitingCount)
+            for: IdleReading(model.activity), waiting: model.permissions.waitingCount,
+            quota: restingQuota, showsRemaining: model.preferences.showsRemainingQuota)
+    }
+
+    /// The plan the resting bar carries, or nil when the setting says the cutout should
+    /// stay bare with nothing running.
+    private var restingQuota: UsageLimitsReader.Reading? {
+        model.preferences.restingQuota ? model.usage.limits : nil
     }
 
     private var shape: NotchShape {
@@ -156,7 +163,9 @@ struct NotchRootView: View {
                 reading: IdleReading(model.activity),
                 notchWidth: controller.geometry.size.width,
                 notchHeight: controller.geometry.size.height,
-                waiting: model.permissions.waitingCount)
+                waiting: model.permissions.waitingCount,
+                quota: restingQuota,
+                showsRemaining: model.preferences.showsRemainingQuota)
         case .flash:
             if let notice = controller.notice {
                 FlashView(notch: controller.geometry.size, notice: notice)
@@ -361,37 +370,64 @@ struct IdleView: View {
     /// is waiting: this says how many, and four queued approvals is a different afternoon
     /// from one.
     var waiting: Int = 0
+    /// What to say when nothing is running. The plan is the one thing that keeps moving on
+    /// a machine with no session open — another window, another host, the window's own
+    /// clock — so it is what the bar carries while it has no agent to draw.
+    var quota: UsageLimitsReader.Reading?
+    var showsRemaining = false
 
     private var count: Int { reading.count }
     /// The pill changes colour rather than growing a second badge — at 32pt there is room
     /// for one signal, and "someone is waiting for you" outranks everything else.
     private var needsYou: Bool { reading.needsYou }
 
+    /// The bar says one thing at a time. An agent outranks the plan: what is running now is
+    /// worth more of a glance than what the week has cost, and two rows of numbers either
+    /// side of the hardware would be a dashboard rather than a strip.
+    private var showsQuota: Bool { count == 0 && !IdleView.windows(of: quota).isEmpty }
+
     var body: some View {
         HStack(spacing: 0) {
             HStack(spacing: 6) {
                 Spacer(minLength: 0)
-                HStack(spacing: 3) {
-                    // A sprite fights only for an agent that is doing something: a session
-                    // that has stopped holds still, and dims, from the corner of a screen.
-                    // The index staggers the beat, so a row of them takes turns rather than
-                    // hopping in unison — and turns them to face each other.
-                    ForEach(Array(reading.agents.enumerated()), id: \.element.agent.rawValue) {
-                        index, entry in
-                        AgentGlyph(
-                            agent: entry.agent, pixel: IdleView.glyphPixel,
-                            isBreathing: entry.isWorking, isFighting: entry.isWorking,
-                            beat: index)
+                if showsQuota {
+                    // The tightest window first, on the left, because it is the one that
+                    // ends your afternoon.
+                    UsageLimitsStrip(
+                        reading: quota, showsRemaining: showsRemaining, maximum: 1)
+                } else {
+                    HStack(spacing: 3) {
+                        // A sprite fights only for an agent that is doing something: a
+                        // session that has stopped holds still, and dims, from the corner of
+                        // a screen. The index staggers the beat, so a row of them takes
+                        // turns rather than hopping in unison — and turns them to face each
+                        // other.
+                        ForEach(Array(reading.agents.enumerated()), id: \.element.agent.rawValue) {
+                            index, entry in
+                            AgentGlyph(
+                                agent: entry.agent, pixel: IdleView.glyphPixel,
+                                isBreathing: entry.isWorking, isFighting: entry.isWorking,
+                                beat: index)
+                        }
                     }
                 }
             }
-            .frame(width: IdleView.flank(for: reading, waiting: waiting) - IdleView.inset)
+            .frame(
+                width: IdleView.flank(
+                    for: reading, waiting: waiting, quota: quota,
+                    showsRemaining: showsRemaining) - IdleView.inset)
             .padding(.trailing, IdleView.inset)
 
             // The cutout itself: nothing is ever drawn here.
             Color.clear.frame(width: notchWidth)
 
             HStack(spacing: 4) {
+                if showsQuota {
+                    // The week, on the other shoulder. Second because it moves slowly: at
+                    // 8% on a Tuesday it is background, where the five-hour window is news.
+                    UsageLimitsStrip(
+                        reading: quota, showsRemaining: showsRemaining, dropFirst: 1, maximum: 1)
+                }
                 // Loudest thing on the bar, and first: a held request is the only item here
                 // that is costing something while it is not read.
                 if waiting > 0 {
@@ -418,7 +454,10 @@ struct IdleView: View {
                 }
                 Spacer(minLength: 0)
             }
-            .frame(width: IdleView.flank(for: reading, waiting: waiting) - IdleView.inset)
+            .frame(
+                width: IdleView.flank(
+                    for: reading, waiting: waiting, quota: quota,
+                    showsRemaining: showsRemaining) - IdleView.inset)
             .padding(.leading, IdleView.inset)
         }
         // The content stays level with the cutout; only the painted shape reaches below it.
@@ -438,14 +477,34 @@ struct IdleView: View {
     /// The inset is part of this number. It was not at first, and the window came out ten
     /// points narrower than what it had to draw — so the count was clipped by the edge it
     /// was supposed to sit inside.
-    static func flank(for reading: IdleReading, waiting: Int = 0) -> CGFloat {
-        // Nothing running is nothing drawn, whatever else Perch knows.
+    static func flank(
+        for reading: IdleReading, waiting: Int = 0,
+        quota: UsageLimitsReader.Reading? = nil, showsRemaining: Bool = false
+    ) -> CGFloat {
+        // Nothing running: the plan, if there is one to show.
         //
-        // The quota used to be able to open the strip on its own, which meant a machine
-        // with no session at all still had two black shoulders beside the cutout — and the
-        // whole point of this state is that a Mac doing nothing looks like a Mac doing
-        // nothing. The number is one hover away, and in the panel's header on every tab.
-        guard reading.count > 0 else { return 0 }
+        // This used to return zero unconditionally — a Mac doing nothing looked like a Mac
+        // doing nothing, and the quota was not allowed to open two black shoulders on a
+        // machine with no session. It earns them: it is the one number that keeps moving
+        // while nothing here is running, and reading it should not cost a hover.
+        //
+        // Zero still, when there is nothing to say. A bridge that was never installed
+        // leaves the cutout exactly as the hardware made it.
+        guard reading.count > 0 else {
+            let windows = windows(of: quota)
+            guard !windows.isEmpty else { return 0 }
+
+            // Measured, not guessed. The window is sized before it draws, so an advance
+            // taken on faith is a last character clipped by the edge it is meant to sit
+            // inside — which is how the session count lost a digit once already.
+            func width(_ index: Int) -> CGFloat {
+                guard windows.indices.contains(index) else { return 0 }
+                return Theme.monoWidth(
+                    UsageLimitsStrip.label(for: windows[index], showsRemaining: showsRemaining),
+                    size: 9)
+            }
+            return max(width(0), width(1)) + inset
+        }
 
         // A sprite plus its 3pt gap, with a floor of 24 for the count pill — wide enough
         // for two digits, which is more concurrent sessions than anyone runs. Plus, once,
@@ -460,6 +519,13 @@ struct IdleView: View {
         // the wider side decides. An asymmetric window would centre the notch off the
         // hardware it is drawn around.
         return max(left, right) + inset
+    }
+
+    /// The two windows the resting bar has room for, in the order it draws them: the
+    /// tightest on the left, the next on the right. Empty when the bridge has published
+    /// nothing, which is what keeps the cutout bare.
+    static func windows(of reading: UsageLimitsReader.Reading?) -> [NamedWindow] {
+        Array(reading?.limits.windows.prefix(2) ?? [])
     }
 }
 

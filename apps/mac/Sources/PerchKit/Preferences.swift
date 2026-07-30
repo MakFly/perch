@@ -99,6 +99,13 @@ public struct Preferences: Codable, Sendable, Equatable {
     /// do next.
     public var quotaWarningThreshold: Double
 
+    /// Carry the plan beside the cutout while nothing is running.
+    ///
+    /// On by default. The state used to draw nothing at all — a Mac doing nothing looked
+    /// like a Mac doing nothing — and that is a real position, kept one click away: the
+    /// quota is still in the panel's header on every tab, one hover from the notch.
+    public var restingQuota: Bool
+
     public init(
         switcherKeyCode: UInt32 = 35,  // kVK_ANSI_P
         switcherModifiers: UInt32 = 4096 | 2048,  // controlKey | optionKey
@@ -111,9 +118,11 @@ public struct Preferences: Codable, Sendable, Equatable {
         layout: PanelLayout = .detailed,
         showsRemainingQuota: Bool = false,
         quotaWarningThreshold: Double = 90,
-        language: AppLanguage = .english
+        language: AppLanguage = .english,
+        restingQuota: Bool = true
     ) {
         self.language = language
+        self.restingQuota = restingQuota
         self.switcherKeyCode = switcherKeyCode
         self.switcherModifiers = switcherModifiers
         self.switcherEnabled = switcherEnabled
@@ -163,6 +172,9 @@ public struct Preferences: Codable, Sendable, Equatable {
         language =
             try container.decodeIfPresent(AppLanguage.self, forKey: .language)
             ?? defaults.language
+        restingQuota =
+            try container.decodeIfPresent(Bool.self, forKey: .restingQuota)
+            ?? defaults.restingQuota
     }
 
     /// Clamped rather than validated: a tuning slider should never be able to make the

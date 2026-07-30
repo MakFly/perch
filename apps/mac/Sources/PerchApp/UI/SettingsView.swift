@@ -181,6 +181,9 @@ private struct GeneralPane: View {
                     next.notchHeightAdjustment = 0
                     model.updatePreferences(next)
                 }
+                Toggle(
+                    t("Show the plan beside the cutout when nothing is running"),
+                    isOn: restingQuota)
             }
 
             Section(
@@ -317,6 +320,16 @@ private struct GeneralPane: View {
             set: { value in
                 var next = model.preferences
                 next.layout = value
+                model.updatePreferences(next)
+            })
+    }
+
+    private var restingQuota: Binding<Bool> {
+        Binding(
+            get: { model.preferences.restingQuota },
+            set: { value in
+                var next = model.preferences
+                next.restingQuota = value
                 model.updatePreferences(next)
             })
     }

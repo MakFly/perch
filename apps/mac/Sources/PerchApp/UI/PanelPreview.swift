@@ -187,7 +187,10 @@ enum PanelPreview {
                         ? IdleReading(
                             agents: [(.claude, true), (.codex, false)], count: 3, needsYou: true)
                         : IdleReading(agents: [], count: 0, needsYou: false)
-                    let flank = IdleView.flank(for: reading, waiting: busy ? 1 : 0)
+                    // With nothing running the bar carries the plan, so the quiet state is
+                    // drawn with one — which is the state this scene exists to check.
+                    let flank = IdleView.flank(
+                        for: reading, waiting: busy ? 1 : 0, quota: busy ? nil : quota)
 
                     ZStack(alignment: .top) {
                         // The cutout, drawn as the hardware would be: nothing may cross it.
@@ -196,7 +199,7 @@ enum PanelPreview {
                             .frame(width: 200 + flank * 2, height: 32)
                         IdleView(
                             reading: reading, notchWidth: 200, notchHeight: 32,
-                            waiting: busy ? 1 : 0)
+                            waiting: busy ? 1 : 0, quota: busy ? nil : quota)
                     }
                     .overlay(
                         Rectangle().stroke(Theme.hairline, lineWidth: 1)
@@ -229,10 +232,12 @@ enum PanelPreview {
         let busy = IdleReading(agents: [(.claude, true), (.codex, true)], count: 3, needsYou: true)
 
         return VStack(alignment: .leading, spacing: 20) {
-            stage("rest · nothing running", size: NotchState.idle.size(notch: notch), painted: false) {
+            stage(
+                "rest · nothing running", size: NotchState.idle.size(notch: notch), painted: false
+            ) {
                 IdleView(
                     reading: IdleReading(agents: [], count: 0, needsYou: false),
-                    notchWidth: notch.width, notchHeight: notch.height)
+                    notchWidth: notch.width, notchHeight: notch.height, quota: quota)
             }
 
             stage(

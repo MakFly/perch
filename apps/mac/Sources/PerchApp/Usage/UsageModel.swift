@@ -79,8 +79,10 @@ final class UsageModel {
     @ObservationIgnored private var store: UsageStore?
     @ObservationIgnored private var indexer: UsageIndexer?
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
-    /// Runs only while the panel is on screen. See `startWatchingLimits`.
     @ObservationIgnored private var limitsTask: Task<Void, Never>?
+    /// The cadence that task is on, so a change of pace restarts it rather than waiting
+    /// out the sleep it is in the middle of.
+    @ObservationIgnored private var limitsInterval: Duration?
 
     func start() {
         // Before the first cost is computed rather than racing it: yesterday's cached
@@ -89,6 +91,9 @@ final class UsageModel {
 
         // Independent of the index: quota shows up even if the transcript store fails.
         reloadLimits()
+        // The resting bar carries the plan, so it has to keep moving with nothing running
+        // and nobody looking. Slowly — the panel raises the pace when it opens.
+        startWatchingLimits(every: Self.restingInterval)
         do {
             let store = try UsageStore(path: UsageStore.defaultURL.path)
             self.store = store
@@ -163,14 +168,26 @@ final class UsageModel {
         }
     }
 
-    /// Re-reads the quota for as long as someone is looking at it.
+    /// How often the quota is re-read while the panel is open, and while it is not.
     ///
-    /// Two small files, so this is cheap enough to do on a short interval — and it is the
-    /// number people open the panel for. Nothing else here polls: the tokens follow the
-    /// hooks, which is when there is new usage to read, while the quota moves whether or
-    /// not this machine is the one spending it.
-    func startWatchingLimits(every interval: Duration = .seconds(2)) {
-        guard limitsTask == nil else { return }
+    /// Both matter now that the resting bar carries the plan: a number beside the cutout
+    /// that only moves when the panel is opened is the bug this file already fixed once,
+    /// put somewhere else. Slow at rest because the bridge writes every ten seconds and a
+    /// window moves by a point a minute at the very most; quick while it is being read.
+    static let watchedInterval: Duration = .seconds(2)
+    static let restingInterval: Duration = .seconds(30)
+
+    /// Re-reads the quota, on whichever cadence fits what is on screen.
+    ///
+    /// A handful of small files, so this is cheap either way. Nothing else here polls: the
+    /// tokens follow the hooks, which is when there is new usage to read, while the quota
+    /// moves whether or not this machine is the one spending it.
+    func startWatchingLimits(every interval: Duration = watchedInterval) {
+        // Restarted rather than left alone, so switching cadence takes effect now instead
+        // of at the end of a thirty-second sleep.
+        guard interval != limitsInterval || limitsTask == nil else { return }
+        limitsTask?.cancel()
+        limitsInterval = interval
         limitsTask = Task { [weak self] in
             while !Task.isCancelled {
                 self?.reloadLimits()
@@ -179,10 +196,8 @@ final class UsageModel {
         }
     }
 
-    func stopWatchingLimits() {
-        limitsTask?.cancel()
-        limitsTask = nil
-    }
+    /// Nothing stops this any more — the resting bar reads the quota too, so there is no
+    /// moment when nobody is looking. What used to be a stop is now a change of pace.
 
     /// Cheap enough to do on every reload: one small file, read off the main actor's hot
     /// path only in the sense that it is a few hundred bytes.

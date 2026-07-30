@@ -109,6 +109,7 @@
 "Needs ⌃, ⌥ or ⌘" = "Il faut ⌃, ⌥ ou ⌘";
 "Notch" = "Encoche";
 "Reset to what macOS reports" = "Revenir à ce que macOS annonce";
+"Show the plan beside the cutout when nothing is running" = "Afficher le forfait à côté de l'encoche quand rien ne tourne";
 "Idle sessions" = "Sessions inactives";
 "Forget a silent session after" = "Oublier une session silencieuse après";
 "Never" = "Jamais";
