@@ -104,6 +104,49 @@ public final class UsageStore: @unchecked Sendable {
 
     // MARK: - Writing
 
+    /// Puts a price on rows that were indexed before the list knew their model.
+    ///
+    /// A row's cost is stored when it is inserted, and stays: what a response cost is what
+    /// it cost, not what the same tokens would cost today. But a model the table had never
+    /// heard of was stored at *zero*, and zero is not a price — it is the absence of one,
+    /// reading on screen as "this was free". Codex arrived this way: two years of rollouts
+    /// indexed against a price list that only carried Anthropic.
+    ///
+    /// So this corrects only the zeroes, only for models that now have a price, and leaves
+    /// every priced row exactly as it was found.
+    /// The lookup is a parameter so a test can hand it a table without mutating the
+    /// process-wide one and leaking a price into every case that runs after it.
+    @discardableResult
+    public func repriceUnpriced(
+        using price: (String) -> ModelPricing? = { Pricing.pricing(for: $0) }
+    ) throws -> Int {
+        var models: [String] = []
+        try database.query(
+            "SELECT DISTINCT model FROM usage_event WHERE cost = 0"
+        ) { row in
+            if let model = row.string(0) { models.append(model) }
+        }
+
+        var repriced = 0
+        for model in models {
+            guard let price = price(model) else { continue }
+            let million = 1_000_000.0
+            try database.execute(
+                """
+                UPDATE usage_event SET cost =
+                    (input * \(price.inputPerMillion)
+                     + output * \(price.outputPerMillion)
+                     + cache_read * \(price.cacheReadPerMillion)
+                     + cache_write_5m * \(price.cacheWrite5mPerMillion)
+                     + cache_write_1h * \(price.cacheWrite1hPerMillion)) / \(million)
+                WHERE model = '\(model.replacingOccurrences(of: "'", with: "''"))'
+                  AND cost = 0
+                """)
+            repriced += 1
+        }
+        return repriced
+    }
+
     /// Inserts events, ignoring ones already indexed. Returns how many were new.
     @discardableResult
     public func insert(_ events: [UsageEvent]) throws -> Int {
@@ -174,9 +217,49 @@ public final class UsageStore: @unchecked Sendable {
 
     // MARK: - Reading
 
-    public func totals(since: Date? = nil) throws -> Totals {
+    /// Which agent's rows a query is about.
+    ///
+    /// Told apart by the model name rather than by a column, because that is what the name
+    /// already is: nothing but Claude Code writes `claude-*`, and nothing but Codex writes
+    /// the rest into this table. A column would be a migration and a second thing to keep
+    /// true; this is one predicate, written once here so the five queries cannot drift.
+    public enum Agent: String, Sendable, CaseIterable {
+        case claude
+        case codex
+
+        /// Codex is the one named, and everything else falls to Claude — including
+        /// `<synthetic>`, which Claude Code writes for a response it produced without
+        /// calling a model. Matching on `claude%` instead would file those under Codex,
+        /// which is where the first version of this put eight of them.
+        var predicate: String {
+            switch self {
+            case .claude: return "model NOT LIKE 'gpt%'"
+            case .codex: return "model LIKE 'gpt%'"
+            }
+        }
+    }
+
+    /// `WHERE` for a time bound and an agent, either of which may be absent.
+    private func clause(since: Date?, agent: Agent?) -> String {
+        var terms: [String] = []
+        if let since { terms.append("ts >= \(Int(since.timeIntervalSince1970))") }
+        if let agent { terms.append(agent.predicate) }
+        return terms.isEmpty ? "" : "WHERE " + terms.joined(separator: " AND ")
+    }
+
+    /// True once anything but Claude has been indexed — which is what decides whether the
+    /// panel offers the choice at all. An empty selector is worse than none.
+    public func hasUsage(for agent: Agent) throws -> Bool {
+        var found = false
+        try database.query(
+            "SELECT 1 FROM usage_event WHERE \(agent.predicate) LIMIT 1"
+        ) { _ in found = true }
+        return found
+    }
+
+    public func totals(since: Date? = nil, agent: Agent? = nil) throws -> Totals {
         var totals = Totals()
-        let clause = since.map { "WHERE ts >= \(Int($0.timeIntervalSince1970))" } ?? ""
+        let clause = clause(since: since, agent: agent)
         try database.query(
             """
             SELECT COUNT(*), COALESCE(SUM(input), 0), COALESCE(SUM(output), 0),
@@ -199,11 +282,11 @@ public final class UsageStore: @unchecked Sendable {
     /// Aggregates on the fly rather than maintaining rollup tables: the corpus is tens
     /// of thousands of rows, the index on `ts` makes this sub-millisecond, and there is
     /// no denormalised copy that can drift out of sync with the raw events.
-    public func buckets(_ granularity: Granularity, limit: Int, since: Date? = nil) throws
-        -> [Bucket]
-    {
+    public func buckets(
+        _ granularity: Granularity, limit: Int, since: Date? = nil, agent: Agent? = nil
+    ) throws -> [Bucket] {
         var buckets: [Bucket] = []
-        let clause = since.map { "WHERE ts >= \(Int($0.timeIntervalSince1970))" } ?? ""
+        let clause = clause(since: since, agent: agent)
         try database.query(
             """
             SELECT strftime('\(granularity.format)', ts, 'unixepoch', 'localtime') AS bucket,
@@ -294,9 +377,11 @@ public final class UsageStore: @unchecked Sendable {
         return rows
     }
 
-    public func totalsByModel(since: Date? = nil) throws -> [(model: String, tokens: Int, cost: Double)] {
+    public func totalsByModel(since: Date? = nil, agent: Agent? = nil) throws -> [(
+        model: String, tokens: Int, cost: Double
+    )] {
         var rows: [(String, Int, Double)] = []
-        let clause = since.map { "WHERE ts >= \(Int($0.timeIntervalSince1970))" } ?? ""
+        let clause = clause(since: since, agent: agent)
         try database.query(
             """
             SELECT model,

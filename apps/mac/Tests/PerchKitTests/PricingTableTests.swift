@@ -26,6 +26,16 @@ private let liteLLM = """
     "input_cost_per_token": 0.000002,
     "output_cost_per_token": 0.000008
   },
+  "azure/gpt-nine": {
+    "litellm_provider": "azure",
+    "input_cost_per_token": 0.00002,
+    "output_cost_per_token": 0.00008
+  },
+  "o-nine": {
+    "litellm_provider": "openai",
+    "input_cost_per_token": 0.000004,
+    "output_cost_per_token": 0.000016
+  },
   "claude-broken": {
     "litellm_provider": "anthropic",
     "input_cost_per_token": "not a number",
@@ -46,14 +56,28 @@ private let liteLLM = """
     #expect(prices["claude-sonnet-9"]?.inputPerMillion == 3)
 }
 
-/// The same model is listed again under `vertex_ai/` and `bedrock/` at different prices,
-/// and a Claude Code transcript is never either of those. Taking the wrong row would
-/// misprice every session by a factor of seven.
-@Test func onlyAnthropicsOwnRowsAreKept() {
+/// The same model is listed again under `vertex_ai/`, `bedrock/` and `azure/` at different
+/// prices, and neither a Claude Code transcript nor a Codex rollout is ever any of those.
+/// Taking the wrong row would misprice every session by a factor of seven.
+@Test func onlyEachVendorsOwnRowsAreKept() {
     let prices = PricingTable.parse(Data(liteLLM.utf8))
     #expect(prices["vertex_ai/claude-opus-9"] == nil)
-    #expect(prices["gpt-nine"] == nil)
+    #expect(prices["azure/gpt-nine"] == nil)
     #expect(prices["sample_spec"] == nil)
+}
+
+/// Codex publishes what it spent, and it spends it on models the list knows. Without their
+/// prices the tokens would show up under a flat zero, which reads as "free" rather than as
+/// "unpriced".
+@Test func openAIsOwnGPTRowsAreKeptToo() {
+    let prices = PricingTable.parse(Data(liteLLM.utf8))
+    #expect(prices["gpt-nine"]?.inputPerMillion == 2)
+    #expect(prices["gpt-nine"]?.outputPerMillion == 8)
+    // A cache read is a tenth of input for both vendors, which is what the shared
+    // derivation in `ModelPricing` assumes.
+    #expect(prices["gpt-nine"]?.cacheReadPerMillion == 0.2)
+    // OpenAI publishes plenty that Codex never runs; only the `gpt-` family is kept.
+    #expect(prices["o-nine"] == nil)
 }
 
 /// A price that does not parse is dropped rather than guessed, and zero is not a price.
@@ -61,7 +85,7 @@ private let liteLLM = """
     let prices = PricingTable.parse(Data(liteLLM.utf8))
     #expect(prices["claude-broken"] == nil)
     #expect(prices["claude-free"] == nil)
-    #expect(prices.count == 2)
+    #expect(prices.count == 3)
 }
 
 @Test func nonsenseParsesToNothingRatherThanCrashing() {

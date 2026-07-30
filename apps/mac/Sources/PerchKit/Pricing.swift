@@ -11,6 +11,8 @@ public struct ModelPricing: Sendable, Equatable {
     public var inputPerMillion: Double
     public var outputPerMillion: Double
 
+    /// A tenth of input, which is both vendors' published ratio: Anthropic charges 0.1x for
+    /// a cache read, and every OpenAI row in the list prices it at exactly a tenth too.
     public var cacheReadPerMillion: Double { inputPerMillion * 0.1 }
     public var cacheWrite5mPerMillion: Double { inputPerMillion * 1.25 }
     public var cacheWrite1hPerMillion: Double { inputPerMillion * 2.0 }
@@ -142,11 +144,20 @@ public enum PricingTable {
         var prices: [String: ModelPricing] = [:]
         for (name, value) in root {
             guard let entry = value as? [String: Any] else { continue }
-            // Anthropic's own rows only. The same models are listed again under
-            // `vertex_ai/` and `bedrock/` at different prices, and a Claude Code
-            // transcript is never either of those.
-            guard (entry["litellm_provider"] as? String) == "anthropic" else { continue }
-            guard name.hasPrefix("claude") else { continue }
+            // Each vendor's own rows only. The same models are listed again under
+            // `vertex_ai/`, `bedrock/` and `azure/` at different prices, and neither a
+            // Claude Code transcript nor a Codex rollout is ever any of those.
+            //
+            // OpenAI is here because Codex publishes what it spent and the price list
+            // knows the models it spends it on — `gpt-5.6-terra` included. What this
+            // computes is what the tokens would have cost through the API; on a Plus or a
+            // Max plan that is a measure of what you used, not a bill. The same caveat has
+            // always applied to the Claude figures beside it.
+            switch entry["litellm_provider"] as? String {
+            case "anthropic": guard name.hasPrefix("claude") else { continue }
+            case "openai": guard name.hasPrefix("gpt-") else { continue }
+            default: continue
+            }
 
             guard let input = number(entry["input_cost_per_token"]),
                 let output = number(entry["output_cost_per_token"]),

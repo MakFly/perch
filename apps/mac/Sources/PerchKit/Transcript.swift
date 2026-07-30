@@ -36,18 +36,28 @@ public enum Transcript {
     /// A window into the middle of a file starts mid-line; that partial line is dropped
     /// rather than parsed into something wrong.
     public static func lastTurn(path: String, maximumBytes: Int = 1024 * 1024) -> TranscriptTurn? {
-        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
+        turn(in: tail(path: path, maximumBytes: maximumBytes))
+    }
+
+    /// The last whole lines of a file, oldest first.
+    ///
+    /// A window into the middle of a file starts mid-line; that partial line is dropped
+    /// rather than parsed into something wrong. Shared with the Codex side, which wants the
+    /// end of a rollout for the same reason: the answer is at the bottom of a file that is
+    /// megabytes long.
+    public static func tail(path: String, maximumBytes: Int = 1024 * 1024) -> [Data] {
+        guard let handle = FileHandle(forReadingAtPath: path) else { return [] }
         defer { try? handle.close() }
 
-        guard let size = try? handle.seekToEnd(), size > 0 else { return nil }
+        guard let size = try? handle.seekToEnd(), size > 0 else { return [] }
         let start = size > UInt64(maximumBytes) ? size - UInt64(maximumBytes) : 0
         try? handle.seek(toOffset: start)
-        guard let data = try? handle.readToEnd(), !data.isEmpty else { return nil }
+        guard let data = try? handle.readToEnd(), !data.isEmpty else { return [] }
 
         var lines = data.split(separator: UInt8(0x0A), omittingEmptySubsequences: true)
         if start > 0, !lines.isEmpty { lines.removeFirst() }
 
-        return turn(in: lines.map { Data($0) })
+        return lines.map { Data($0) }
     }
 
     /// The parsing half, separated so tests can hand it lines without a file.

@@ -641,6 +641,14 @@ final class AppModel {
 
         report.section("Quota")
         report.field("bridge", usage.bridgeLimits == nil ? "not connected" : "connected")
+        // Both agents, whichever tab happens to be selected: a report is about the machine,
+        // not about what is on screen.
+        report.field("codex", usage.codexLimits == nil ? "no rollout" : "read")
+        for window in usage.codexLimits?.limits.windows ?? [] {
+            let used = String(format: "%.0f%% used", window.window.utilization ?? 0)
+            report.field(
+                "codex \(window.title)", window.window.isStale() ? used + " (stale)" : used)
+        }
         report.field(
             "prices",
             Pricing.refreshedAt.map { "refreshed \($0.formatted(.iso8601))" } ?? "as shipped")
@@ -729,7 +737,17 @@ final class AppModel {
             }
         }
         usage.reloadLimits()
-        if let reading = usage.limits, !reading.limits.isEmpty {
+        if let codex = usage.codexLimits, !codex.limits.isEmpty {
+            lines.append("quota codex")
+            for window in codex.limits.windows {
+                let used = window.window.utilization.map { String(format: "%.0f%%", $0) } ?? "?"
+                let left = window.window.timeLeft().map { " · resets in \($0)" } ?? ""
+                let state = window.window.isStale() ? "stale" : "\(used) used\(left)"
+                lines.append(
+                    "  \(window.title.padding(toLength: 16, withPad: " ", startingAt: 0)) \(state)")
+            }
+        }
+        if let reading = usage.bridgeLimits, !reading.limits.isEmpty {
             lines.append("quota")
             for window in reading.limits.windows {
                 let used = window.window.utilization.map { String(format: "%.0f%%", $0) } ?? "?"
@@ -741,7 +759,7 @@ final class AppModel {
                     ? "stale — waiting for a fresh render" : "\(used) used\(resets)"
                 lines.append("  \(window.title.padding(toLength: 16, withPad: " ", startingAt: 0)) \(state)")
             }
-        } else if usage.limits?.limits.available == false {
+        } else if usage.bridgeLimits?.limits.available == false {
             lines.append("quota          not applicable on this account")
         } else {
             lines.append("quota          no data — run ./scripts/usage-bridge.sh")

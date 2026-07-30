@@ -9,9 +9,15 @@ struct StatsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // Two agents, two plans, two sets of numbers — and adding them would answer a
+            // question nobody has. The tab picks which one this whole pane is about; it
+            // only appears once there is something to switch to.
+            if usage.hasCodex {
+                AgentPicker(selection: usage.agent) { usage.agent = $0 }
+            }
             // Quota first: "how much is left" beats "what it cost" for a glance.
             UsageLimitsView(
-                reading: usage.limits, remote: usage.remoteLimits,
+                reading: usage.limits, remote: agentRemotes,
                 showsRemaining: showsRemaining, onToggle: onToggleQuota)
             header
             summary
@@ -19,6 +25,13 @@ struct StatsView: View {
             models
             Spacer(minLength: 0)
         }
+    }
+
+    /// Remote hosts report a Claude quota read from their own statusline bridge. They have
+    /// nothing to say about Codex, so they are listed under the tab they belong to rather
+    /// than under both.
+    private var agentRemotes: [String: UsageLimitsReader.Reading] {
+        usage.agent == .claude ? usage.remoteLimits : [:]
     }
 
     private var header: some View {
@@ -115,6 +128,33 @@ struct StatsView: View {
     }
 
     /// `claude-opus-4-8` reads better as `opus-4-8` in a 680pt panel.
+}
+
+/// Which agent the Stats pane is about. Drawn like the granularity chips beside it, because
+/// it is the same kind of control: a small, always-visible switch between readings of the
+/// same screen.
+private struct AgentPicker: View {
+    let selection: UsageStore.Agent
+    let onSelect: (UsageStore.Agent) -> Void
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(UsageStore.Agent.allCases, id: \.self) { agent in
+                Button { onSelect(agent) } label: {
+                    Text(agent.rawValue)
+                        .font(Theme.mono(9, .medium))
+                        .foregroundStyle(agent == selection ? Theme.primary : Theme.tertiary)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(agent == selection ? Theme.hairlineStrong : .clear))
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer(minLength: 0)
+        }
+    }
 }
 
 private struct GranularityPicker: View {

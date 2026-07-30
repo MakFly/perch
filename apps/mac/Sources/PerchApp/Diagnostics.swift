@@ -59,12 +59,15 @@ enum Diagnostics {
 
             let transcripts = indexer.transcriptURLs()
             print("store       \(UsageStore.defaultURL.path)")
-            print("transcripts \(transcripts.count) files")
+            // Broken down by agent: "0 files" and "0 Codex files" are different problems,
+            // and this command exists to tell them apart.
+            let codex = transcripts.filter { if case .codex = $0.source { true } else { false } }
+            print("transcripts \(transcripts.count) files (\(codex.count) Codex)")
             guard let first = transcripts.first else {
-                print("nothing to index — is ~/.claude/projects present?")
+                print("nothing to index — are ~/.claude/projects and ~/.codex/sessions present?")
                 return 1
             }
-            print("first       \(first.path)")
+            print("first       \(first.url.path)")
 
             let clock = ContinuousClock()
             var progress = UsageIndexer.Progress()

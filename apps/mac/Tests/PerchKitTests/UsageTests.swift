@@ -155,6 +155,64 @@ private func sampleEvent(id: String, request: String = "r1", tokens: Int = 100) 
     #expect(totals.inputTokens == 200)
 }
 
+/// Two agents share one table, told apart by the only thing that already distinguishes
+/// them: nothing but Claude Code writes `claude-*`. The regression this guards is the
+/// Claude tab quietly counting Codex tokens.
+@Test func eachAgentSeesOnlyItsOwnRows() throws {
+    let (store, url) = try makeStore()
+    defer { try? FileManager.default.removeItem(at: url) }
+
+    var codex = sampleEvent(id: "gpt", tokens: 30)
+    codex.model = "gpt-5.6-terra"
+    _ = try store.insert([sampleEvent(id: "claude", tokens: 100), codex])
+
+    #expect(try store.totals(agent: .claude).inputTokens == 100)
+    #expect(try store.totals(agent: .codex).inputTokens == 30)
+    // No filter is still the whole machine, which is what the diagnostics report.
+    #expect(try store.totals().inputTokens == 130)
+
+    #expect(try store.totalsByModel(agent: .codex).map(\.model) == ["gpt-5.6-terra"])
+    #expect(try store.buckets(.day, limit: 10, agent: .claude).count == 1)
+
+    #expect(try store.hasUsage(for: .codex))
+}
+
+/// Zero is not a price, it is the absence of one — and it reads on screen as "free".
+/// Codex arrived exactly this way: rollouts indexed against a list that only carried
+/// Anthropic, every row stored at nothing.
+@Test func rowsIndexedBeforeTheirPriceWasKnownAreCorrected() throws {
+    let (store, url) = try makeStore()
+    defer { try? FileManager.default.removeItem(at: url) }
+
+    var unpriced = sampleEvent(id: "gpt", tokens: 1_000_000)
+    unpriced.model = "gpt-not-in-any-list"
+    var priced = sampleEvent(id: "claude", tokens: 1_000_000)
+    _ = try store.insert([unpriced, priced])
+
+    let before = try store.totals()
+    #expect(before.cost > 0)  // the Claude row was priced on the way in
+
+    _ = try store.repriceUnpriced { model in
+        model == "gpt-not-in-any-list" ? ModelPricing(input: 2, output: 8) : nil
+    }
+
+    // A million input tokens at $2 per million.
+    #expect(try store.totals(agent: .codex).cost == 2)
+    // And the row that already had a price is left exactly as it was found.
+    #expect(try store.totals(agent: .claude).cost == before.cost)
+}
+
+/// The selector only appears once there is a second agent to switch to; on a machine that
+/// has only ever run Claude Code it would be a control with one setting.
+@Test func aClaudeOnlyMachineHasNoCodexUsage() throws {
+    let (store, url) = try makeStore()
+    defer { try? FileManager.default.removeItem(at: url) }
+
+    _ = try store.insert([sampleEvent(id: "claude")])
+    #expect(try store.hasUsage(for: .claude))
+    #expect(try !store.hasUsage(for: .codex))
+}
+
 /// Same message id, different request id: a genuine retry, and two billed responses.
 @Test func sameMessageWithDifferentRequestIsNotADuplicate() throws {
     let (store, url) = try makeStore()

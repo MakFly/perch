@@ -19,9 +19,26 @@ final class UsageModel {
     /// reading it needs no credential.
     private(set) var bridgeLimits: UsageLimitsReader.Reading?
 
-    /// Nil means the bridge has nothing yet, and the panel offers to connect instead of
+    /// Codex publishes the same thing in a different place: every `token_count` line of a
+    /// rollout carries the plan's windows. No bridge and no credential — the newest file on
+    /// disk is the reading.
+    private(set) var codexLimits: UsageLimitsReader.Reading?
+
+    /// Which agent the Stats tab is showing. Everything below follows it: the quota, the
+    /// tiles, the sparkline and the per-model rows.
+    var agent: UsageStore.Agent = .claude {
+        didSet { if agent != oldValue { reload() } }
+    }
+
+    /// Whether there is a second agent to switch to. False on a machine that has only ever
+    /// run Claude Code, where the selector would be a control with one setting.
+    private(set) var hasCodex = false
+
+    /// Nil means nothing has been read yet, and the panel offers to connect instead of
     /// showing a wrong zero.
-    var limits: UsageLimitsReader.Reading? { bridgeLimits }
+    var limits: UsageLimitsReader.Reading? {
+        agent == .codex ? codexLimits : bridgeLimits
+    }
 
     /// Quota reported by remote hosts, keyed by the alias you gave them. A build server
     /// signed in as a different account has a different budget, and conflating the two
@@ -92,6 +109,10 @@ final class UsageModel {
             case .success:
                 indexError = nil
                 lastIndexedAt = .now
+                // A price list that has just learned a model does not retroactively price
+                // what was indexed before it — unless it is asked to. Cheap and idempotent:
+                // it only ever touches rows still sitting at zero.
+                try? store?.repriceUnpriced()
             case .failure(let error):
                 indexError = "\(error)"
             }
@@ -115,14 +136,21 @@ final class UsageModel {
     /// path only in the sense that it is a few hundred bytes.
     func reloadLimits() {
         bridgeLimits = limitsReader.read()
+        codexLimits = CodexQuota.read()
         noticeCrossings()
     }
 
     /// One door for every reading, wherever it came from, so a crossing is noticed exactly
     /// once and the same way.
     private func noticeCrossings() {
-        guard let reading = limits else { return }
-        for event in watcher.events(for: reading.limits) { onQuotaEvent?(event) }
+        // Both agents in one call. The watcher forgets any window it is not shown, so
+        // announcing them in turn would have each one wipe the other's history — and a
+        // Codex week at 94% is exactly the thing worth being told about, whichever tab
+        // happens to be open.
+        var combined = bridgeLimits?.limits ?? RateLimits()
+        combined.modelScoped += codexLimits?.limits.modelScoped ?? []
+        guard !combined.isEmpty else { return }
+        for event in watcher.events(for: combined) { onQuotaEvent?(event) }
     }
 
     /// The daily counters the leaderboard publishes, read off the main actor.
@@ -158,6 +186,7 @@ final class UsageModel {
         let startOfDay = Calendar.current.startOfDay(for: .now)
         let granularity = granularity
         let bucketCount = bucketCount
+        let agent = agent
 
         Task {
             let result = await Task.detached(priority: .utility) {
@@ -165,10 +194,12 @@ final class UsageModel {
                 do {
                     return .success(
                         Aggregates(
-                            today: try store.totals(since: startOfDay),
-                            allTime: try store.totals(),
-                            buckets: try store.buckets(granularity, limit: bucketCount),
-                            byModel: try store.totalsByModel(since: startOfDay)))
+                            today: try store.totals(since: startOfDay, agent: agent),
+                            allTime: try store.totals(agent: agent),
+                            buckets: try store.buckets(
+                                granularity, limit: bucketCount, agent: agent),
+                            byModel: try store.totalsByModel(since: startOfDay, agent: agent),
+                            hasCodex: try store.hasUsage(for: .codex)))
                 } catch {
                     return .failure(error)
                 }
@@ -180,6 +211,7 @@ final class UsageModel {
                 allTime = aggregates.allTime
                 buckets = aggregates.buckets
                 byModel = aggregates.byModel
+                hasCodex = aggregates.hasCodex
             case .failure(let error):
                 indexError = "\(error)"
             }
@@ -192,6 +224,7 @@ final class UsageModel {
         var allTime: UsageStore.Totals
         var buckets: [UsageStore.Bucket]
         var byModel: [(model: String, tokens: Int, cost: Double)]
+        var hasCodex: Bool
     }
 
     /// How many buckets the sparkline shows — one screen's worth per granularity.
