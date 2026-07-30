@@ -391,12 +391,16 @@ struct IdleView: View {
             HStack(spacing: 6) {
                 Spacer(minLength: 0)
                 if showsQuota {
-                    // A creature, and the tightest window — the one that ends an afternoon.
-                    // The countdown is dropped here: at eleven characters a window it was
-                    // what pushed the chip onto a second line, and it is the half nobody
-                    // reads from across a room.
+                    // The one that is always there, where it is always there — the same
+                    // creature the strip puts on the left when Claude Code is running, held
+                    // still because nothing is. Then the tightest window, the one that ends
+                    // an afternoon. The countdown is dropped: at eleven characters a window
+                    // it was what pushed the chip onto a second line, and it is the half
+                    // nobody reads from across a room.
                     HStack(spacing: IdleView.spriteGap) {
-                        IdleSprite()
+                        AgentGlyph(
+                            agent: .claude, pixel: IdleView.glyphPixel,
+                            isBreathing: false, isFighting: false)
                         UsageLimitsStrip(
                             reading: quota, showsRemaining: showsRemaining, maximum: 1,
                             showsReset: false)
@@ -432,10 +436,15 @@ struct IdleView: View {
                 if showsQuota {
                     // The week, on the other shoulder. Second because it moves slowly: at
                     // 8% on a Tuesday it is background, where the five-hour window is news.
-                    UsageLimitsStrip(
-                        reading: quota, showsRemaining: showsRemaining, dropFirst: 1,
-                        maximum: 1, showsReset: false)
-                        .fixedSize()
+                    // And the resting creature at the far edge, mirroring the one on the
+                    // left: both sprites sit outermost, both numbers against the hardware.
+                    HStack(spacing: IdleView.spriteGap) {
+                        UsageLimitsStrip(
+                            reading: quota, showsRemaining: showsRemaining, dropFirst: 1,
+                            maximum: 1, showsReset: false)
+                        IdleSprite()
+                    }
+                    .fixedSize()
                 }
                 // Loudest thing on the bar, and first: a held request is the only item here
                 // that is costing something while it is not read.
@@ -521,11 +530,13 @@ struct IdleView: View {
                 return UsageLimitsStrip.width(
                     for: windows[index], showsRemaining: showsRemaining, showsReset: false)
             }
-            // No sheet installed, no room reserved: the two percentages close up rather
-            // than sitting either side of a hole.
-            let sprite = IdleSprite.sheet == nil ? 0 : IdleSprite.side + spriteGap
-            let left = sprite + chip(0) + quotaGap
-            let right = chip(1) + quotaGap
+            // The agent's glyph is always drawn — it falls back to pixel art of our own
+            // when no sheet is installed. The resting creature is not: no sheet, no room
+            // reserved, and the week's number closes up against the cutout rather than
+            // sitting beside a hole.
+            let resting = IdleSprite.sheet == nil ? 0 : IdleSprite.side + spriteGap
+            let left = AgentGlyph.width(pixel: glyphPixel) + spriteGap + chip(0) + quotaGap
+            let right = chip(1) + resting + quotaGap
             return max(left, right) + inset
         }
 
