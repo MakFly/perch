@@ -14,11 +14,17 @@
 # the original command. Your statusline output is unchanged, and removing the bridge
 # restores the original command verbatim.
 #
-# Every session renders through the same bridge into the same cache, and the numbers a
-# session sends are the ones its own last API response carried — so a session idle since
-# yesterday renders yesterday's quota, right now. Writing unconditionally means the last
-# writer wins, and the last writer may be the stalest session: a cache file four seconds
-# old holding a week that reset hours ago. So the bridge only writes forward.
+# Every session renders through the same bridge, and the numbers a session sends are the
+# ones its own last API response carried — so a session idle since yesterday renders
+# yesterday's quota, right now. Into one file that means the last writer wins, and the last
+# writer may be the stalest session. Measured on a machine with three sessions open: the
+# cache cycled 43% → 20% → 10% every ten seconds, all three for the same account and the
+# same window, because each idle session kept republishing what it saw hours ago.
+#
+# So each session writes its own file, `cache/rate-limits/<session-id>.json`, which it
+# alone ever overwrites. Nothing here has to decide which reading is worth keeping: Perch
+# reads them all and takes, per window, the newest — which within one window is the
+# highest, because usage only goes up until it resets.
 set -euo pipefail
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -103,6 +109,7 @@ install() {
 # to the original statusline command so its output is byte-for-byte what it was.
 PERCH_HOME="${PERCH_HOME:-$HOME/.perch}"
 CACHE="$PERCH_HOME/cache/rate-limits.json"
+SESSIONS="$PERCH_HOME/cache/rate-limits"
 ORIGINAL="$PERCH_HOME/statusline-original.json"
 STDIN_FILE="${TMPDIR:-/tmp}/perch-statusline-stdin.$$"
 
@@ -115,11 +122,32 @@ cat >"$STDIN_FILE"
 if command -v jq >/dev/null 2>&1; then
   _limits=$(jq -c '{rate_limits, rate_limits_available}' <"$STDIN_FILE" 2>/dev/null)
   if [ -n "$_limits" ] && [ "$_limits" != "null" ]; then
+    # One file per session, which that session alone ever writes. Three sessions open means
+    # three numbers arriving every ten seconds — the busy one's, and two frozen at whatever
+    # their last API response carried — and a single file would show whichever landed last.
+    # The session id comes from the payload; anything that is not a plain identifier is
+    # dropped rather than turned into a path.
+    _session=$(jq -r '.session_id // empty' <"$STDIN_FILE" 2>/dev/null | tr -cd 'A-Za-z0-9._-')
+    if [ -n "$_session" ]; then
+      _dir="$PERCH_HOME/cache/rate-limits"
+      mkdir -p "$_dir" 2>/dev/null
+      _mine="$_dir/$_session.json"
+      _minetmp="$_mine.$$.tmp"
+      jq -c '{rate_limits, rate_limits_available, session_id, cwd}' <"$STDIN_FILE" \
+        >"$_minetmp" 2>/dev/null && mv "$_minetmp" "$_mine" 2>/dev/null
+      rm -f "$_minetmp" 2>/dev/null
+    fi
+
+    # The single file stays, for a Perch that predates the directory above: it would find
+    # nothing to read and show "not connected" on a machine whose quota is right there.
+    #
     # Only ever write forward. A render carries no timestamp of its own, but every window
     # carries the instant it resets, and that instant moves with the window — so the latest
     # `resets_at` in a payload dates the observation well enough to tell an idle session's
-    # old snapshot from a current one. Nothing to compare against, or jq choking on a
-    # corrupt cache: write, which is what this did before the comparison existed.
+    # old snapshot from a current one. It cannot tell two snapshots of the *same* window
+    # apart, which is what the per-session files above are for. Nothing to compare against,
+    # or jq choking on a corrupt cache: write, which is what this did before the comparison
+    # existed.
     _write=1
     if [ -f "$CACHE" ]; then
       _write=$(printf '%s' "$_limits" | jq --slurpfile cached "$CACHE" --argjson now "$(date +%s)" '

@@ -186,3 +186,100 @@ private let payload = """
     // The reading is still listed — dropping it would empty the panel into "not connected".
     #expect(limits.windows.map(\.id) == ["five_hour", "seven_day"])
 }
+
+// MARK: - One reading per session
+
+private func reading(fiveHour: Double, sevenDay: Double, resets: Double = 1_785_421_200)
+    -> RateLimits
+{
+    RateLimits(
+        fiveHour: RateLimitWindow(
+            utilization: fiveHour, resetsAt: Date(timeIntervalSince1970: resets)),
+        sevenDay: RateLimitWindow(
+            utilization: sevenDay, resetsAt: Date(timeIntervalSince1970: resets + 588_000)))
+}
+
+/// Measured on a real machine: three sessions open, all on one account, republishing every
+/// ten seconds — 43%, 20% and 10% of the same five-hour window at the same instant. The
+/// busy one is right and the two idle ones are frozen at what they saw hours ago, so the
+/// single file showed whichever landed last and the panel cycled through all three.
+@Test func theBusiestSessionsReadingWinsOverTheFrozenOnes() throws {
+    let merged = try #require(
+        RateLimits.merged([reading(fiveHour: 20, sevenDay: 4),
+                           reading(fiveHour: 43, sevenDay: 9),
+                           reading(fiveHour: 10, sevenDay: 2)]))
+
+    #expect(merged.fiveHour?.utilization == 43)
+    #expect(merged.sevenDay?.utilization == 9)
+}
+
+/// Higher only means newer *within* a window. Once the window has turned over, the reading
+/// that belongs to the new one wins however small it is — otherwise a reset would never
+/// show, and the panel would sit at 98% into the next week.
+@Test func aWindowThatHasTurnedOverBeatsAHigherNumberFromTheOldOne() throws {
+    let old = reading(fiveHour: 98, sevenDay: 88)
+    let new = reading(fiveHour: 3, sevenDay: 1, resets: 1_785_421_200 + 18_000)
+
+    let merged = try #require(RateLimits.merged([old, new]))
+    #expect(merged.fiveHour?.utilization == 3)
+    #expect(merged.sevenDay?.utilization == 1)
+}
+
+/// Per-model weeks are merged by name, not by position: a session that reports only the
+/// Opus window must not shift the Sonnet one onto it.
+@Test func perModelWindowsAreMergedByName() throws {
+    let opus = RateLimits(modelScoped: [
+        NamedWindow(
+            id: "seven_day_opus", title: "7d Opus",
+            window: RateLimitWindow(utilization: 12, resetsAt: nil))
+    ])
+    let both = RateLimits(modelScoped: [
+        NamedWindow(
+            id: "seven_day_opus", title: "7d Opus",
+            window: RateLimitWindow(utilization: 40, resetsAt: nil)),
+        NamedWindow(
+            id: "seven_day_sonnet", title: "7d Sonnet",
+            window: RateLimitWindow(utilization: 7, resetsAt: nil)),
+    ])
+
+    let merged = try #require(RateLimits.merged([opus, both]))
+    #expect(merged.modelScoped.map(\.id) == ["seven_day_opus", "seven_day_sonnet"])
+    #expect(merged.modelScoped.first?.window.utilization == 40)
+}
+
+/// An API key signed in beside a subscription reports no windows at all. It must not erase
+/// the plan the other session can see.
+@Test func anAccountWithoutAPlanDoesNotEraseOneWithIt() throws {
+    let merged = try #require(
+        RateLimits.merged([RateLimits(available: false), reading(fiveHour: 30, sevenDay: 5)]))
+
+    #expect(merged.available)
+    #expect(merged.fiveHour?.utilization == 30)
+}
+
+@Test func nothingToMergeIsNothingRatherThanZero() {
+    #expect(RateLimits.merged([]) == nil)
+}
+
+/// The directory is what the bridge writes now; the single file is what a bridge older
+/// than it wrote, and dropping that would show "not connected" on a machine whose quota is
+/// sitting right there.
+@Test func theReaderPrefersTheSessionFilesAndFallsBackToTheOldOne() throws {
+    let root = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("perch-limits-\(UUID().uuidString)")
+    let directory = root.appendingPathComponent("rate-limits")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let legacy = root.appendingPathComponent("rate-limits.json")
+    try Data(#"{"rate_limits":{"five_hour":{"used_percentage":11}}}"#.utf8).write(to: legacy)
+
+    let reader = UsageLimitsReader(url: legacy, directory: directory)
+    #expect(reader.read()?.limits.fiveHour?.utilization == 11)
+
+    for (name, used) in [("a", 20.0), ("b", 43.0)] {
+        try Data(#"{"rate_limits":{"five_hour":{"used_percentage":\#(used)}}}"#.utf8)
+            .write(to: directory.appendingPathComponent("\(name).json"))
+    }
+    #expect(reader.read()?.limits.fiveHour?.utilization == 43)
+}
