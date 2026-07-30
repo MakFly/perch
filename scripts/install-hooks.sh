@@ -180,7 +180,9 @@ jq \
   # Compaction can run for a while and looks like a hang without it.
   | .hooks.PreCompact        = ((.hooks.PreCompact // [])        + [perch_entry("PreCompact"; 5)])
   | .hooks.SessionStart      = ((.hooks.SessionStart // [])      + [perch_entry("SessionStart"; 5)])
-  | .hooks.SessionEnd        = ((.hooks.SessionEnd // [])        + [perch_entry("SessionEnd"; 5)])
+  # Three, not five: shutdown is on the critical path, so Claude Code clamps SessionEnd to 3s
+  # and warns at startup about anything longer.
+  | .hooks.SessionEnd        = ((.hooks.SessionEnd // [])        + [perch_entry("SessionEnd"; 3)])
   ' "$SETTINGS.perch-backup" >"$SETTINGS.tmp"
 
 rewrite_settings "$SETTINGS.tmp"

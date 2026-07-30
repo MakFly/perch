@@ -111,7 +111,8 @@ with open(path) as f:
 events = {
     "PermissionRequest": 86400, "PreToolUse": 5, "PostToolUse": 5, "Notification": 5,
     "UserPromptSubmit": 5, "Stop": 5, "StopFailure": 5, "SubagentStart": 5,
-    "SubagentStop": 5, "PreCompact": 5, "SessionStart": 5, "SessionEnd": 5,
+    # SessionEnd is 3 because Claude Code clamps that event to 3s and warns about more.
+    "SubagentStop": 5, "PreCompact": 5, "SessionStart": 5, "SessionEnd": 3,
 }
 
 hooks = root.setdefault("hooks", {})
