@@ -9,16 +9,20 @@ struct StatsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Two agents, two plans, two sets of numbers — and adding them would answer a
-            // question nobody has. The tab picks which one this whole pane is about; it
-            // only appears once there is something to switch to.
-            if usage.hasCodex {
-                AgentPicker(selection: usage.agent) { usage.agent = $0 }
+            // Several agents, several plans, several sets of numbers — and adding them would
+            // answer a question nobody has. The tab picks which one this whole pane is
+            // about; it only appears once there is something to switch to.
+            if usage.agents.count > 1 {
+                AgentPicker(agents: usage.agents, selection: usage.agent) { usage.agent = $0 }
             }
             // Quota first: "how much is left" beats "what it cost" for a glance.
-            UsageLimitsView(
-                reading: usage.limits, remote: agentRemotes,
-                showsRemaining: showsRemaining, onToggle: onToggleQuota)
+            if usage.agent == .opencode {
+                NoPlanWindow()
+            } else {
+                UsageLimitsView(
+                    reading: usage.limits, remote: agentRemotes,
+                    showsRemaining: showsRemaining, onToggle: onToggleQuota)
+            }
             header
             summary
             chart
@@ -67,7 +71,7 @@ struct StatsView: View {
             StatTile(
                 label: t("cache read"),
                 value: usage.today.cacheReadTokens.compactTokens,
-                detail: "\(cacheShare)% of today",
+                detail: t("%lld%% of today", cacheShare),
                 tint: Theme.warning)
         }
     }
@@ -130,16 +134,39 @@ struct StatsView: View {
     /// `claude-opus-4-8` reads better as `opus-4-8` in a 680pt panel.
 }
 
+/// Where the quota goes on the opencode tab.
+///
+/// Not "not connected", which is an invitation to fix something: there is nothing to fix.
+/// opencode talks to each provider with your own key, and no provider publishes a window
+/// anywhere on this disk — unlike Claude Code, which puts one on its statusline, and Codex,
+/// which puts one in every rollout. Offering the Claude bridge here would be a button that
+/// cannot work.
+private struct NoPlanWindow: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(t("Plan"))
+                .font(Theme.label(13, .semibold))
+                .foregroundStyle(Theme.primary)
+            Text(t("No plan window: opencode bills each provider directly and publishes no quota locally. What is below is what it spent."))
+                .font(Theme.mono(9))
+                .foregroundStyle(Theme.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
 /// Which agent the Stats pane is about. Drawn like the granularity chips beside it, because
 /// it is the same kind of control: a small, always-visible switch between readings of the
 /// same screen.
 private struct AgentPicker: View {
+    /// Only the agents that have run here — a tab onto an empty screen is worse than no tab.
+    let agents: [UsageStore.Agent]
     let selection: UsageStore.Agent
     let onSelect: (UsageStore.Agent) -> Void
 
     var body: some View {
         HStack(spacing: 2) {
-            ForEach(UsageStore.Agent.allCases, id: \.self) { agent in
+            ForEach(agents, id: \.self) { agent in
                 Button { onSelect(agent) } label: {
                     Text(agent.rawValue)
                         .font(Theme.mono(9, .medium))
@@ -303,7 +330,7 @@ private struct TokenBars: View {
                 } else {
                     Text(buckets.first?.label ?? "")
                     Spacer()
-                    Text("peak \(peak.compactTokens)")
+                    Text(t("peak %@", peak.compactTokens))
                         .foregroundStyle(Theme.active)
                     Spacer()
                     Text(buckets.last?.label ?? "")

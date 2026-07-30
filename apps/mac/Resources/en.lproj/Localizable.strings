@@ -48,6 +48,7 @@
 "7d Sonnet" = "7d Sonnet";
 "No plan limits on this account — API key, Bedrock or Vertex." = "No plan limits on this account — API key, Bedrock or Vertex.";
 "Not connected. Run ./scripts/usage-bridge.sh, then restart your sessions." = "Not connected. Run ./scripts/usage-bridge.sh, then restart your sessions.";
+"No plan window: opencode bills each provider directly and publishes no quota locally. What is below is what it spent." = "No plan window: opencode bills each provider directly and publishes no quota locally. What is below is what it spent.";
 
 /* Tokens */
 "Tokens" = "Tokens";
@@ -55,6 +56,8 @@
 "today" = "today";
 "all time" = "all time";
 "cache read" = "cache read";
+"%lld%% of today" = "%lld%% of today";
+"peak %@" = "peak %@";
 "No usage indexed yet." = "No usage indexed yet.";
 
 /* Permission card */
@@ -177,3 +180,10 @@
 "Uninstalling — Perch will quit. Output: %@" = "Uninstalling — Perch will quit. Output: %@";
 "Could not start the uninstaller. Run it yourself: %@" = "Could not start the uninstaller. Run it yourself: %@";
 "Copied. Run it in a terminal." = "Copied. Run it in a terminal.";
+
+/* Language */
+"Language" = "Language";
+"System" = "System";
+"English by default, whatever the Mac is set to: the agent it sits over speaks English, and one window in two languages reads worse than either." = "English by default, whatever the Mac is set to: the agent it sits over speaks English, and one window in two languages reads worse than either.";
+"Relaunch Perch" = "Relaunch Perch";
+"A language change takes effect when Perch starts." = "A language change takes effect when Perch starts.";

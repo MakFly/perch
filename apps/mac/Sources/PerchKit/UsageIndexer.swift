@@ -2,11 +2,14 @@ import Foundation
 
 /// Reads agent transcripts into the usage store, resuming where it left off.
 ///
-/// Two shapes, two directories. Claude Code writes a conversation whose assistant lines
-/// carry their own usage; Codex writes a typed event stream where the counters arrive on a
-/// line of their own and the model belongs to the line before it. Which parser a file gets
-/// is decided by the root it was found under — the two never mix, and a rollout that
-/// wandered into `~/.claude` would be skipped rather than misread.
+/// Three shapes. Claude Code writes a conversation whose assistant lines carry their own
+/// usage; Codex writes a typed event stream where the counters arrive on a line of their own
+/// and the model belongs to the line before it. Which parser a file gets is decided by the
+/// root it was found under — the two never mix, and a rollout that wandered into `~/.claude`
+/// would be skipped rather than misread.
+///
+/// opencode writes no transcript at all: its sessions live in a SQLite database, so it is
+/// read by `OpencodeUsage` and resumed by a timestamp rather than by a byte offset.
 public struct UsageIndexer {
     public struct Progress: Sendable {
         public var filesScanned = 0
@@ -16,14 +19,16 @@ public struct UsageIndexer {
         public init() {}
     }
 
-    /// Which agent wrote a directory, and therefore how to read what is in it.
-    public enum Source: Sendable {
-        case claude
-        case codex
-    }
+    /// Which agent wrote a store, and therefore how to read what is in it.
+    ///
+    /// The same vocabulary the index is keyed on: two enumerations with identical cases,
+    /// each having to be kept in step with the other, is a bug waiting for the fourth agent.
+    public typealias Source = UsageStore.Agent
 
     private let store: UsageStore
     private let roots: [(url: URL, source: Source)]
+    /// opencode's database, or nil when this indexer is pointed at a directory for a test.
+    private let opencodeDatabase: URL?
     /// Chunk size for tailing. Transcripts reach hundreds of megabytes, so the file is
     /// streamed rather than read whole.
     private let chunkSize = 4 * 1024 * 1024
@@ -38,14 +43,19 @@ public struct UsageIndexer {
             .appendingPathComponent(".codex/sessions", isDirectory: true)
     }
 
-    public init(store: UsageStore, roots: [(url: URL, source: Source)]? = nil) {
+    public init(
+        store: UsageStore,
+        roots: [(url: URL, source: Source)]? = nil,
+        opencodeDatabase: URL? = OpencodeUsage.defaultDatabaseURL
+    ) {
         self.store = store
         self.roots = roots ?? [(Self.claudeRoot, .claude), (Self.codexRoot, .codex)]
+        self.opencodeDatabase = opencodeDatabase
     }
 
     /// One root, for tests and for anyone pointing this at a copied directory.
     public init(store: UsageStore, root: URL, source: Source = .claude) {
-        self.init(store: store, roots: [(root, source)])
+        self.init(store: store, roots: [(root, source)], opencodeDatabase: nil)
     }
 
     public func transcriptURLs() -> [(url: URL, source: Source)] {
@@ -64,7 +74,7 @@ public struct UsageIndexer {
         }
     }
 
-    /// Indexes every transcript that has grown since the last run.
+    /// Indexes every transcript that has grown since the last run, then opencode's store.
     @discardableResult
     public func indexAll(onProgress: ((Progress) -> Void)? = nil) throws -> Progress {
         var progress = Progress()
@@ -75,7 +85,39 @@ public struct UsageIndexer {
             progress.bytesRead += result.bytesRead
             onProgress?(progress)
         }
+
+        if let inserted = try indexOpencode() {
+            // One store, counted as one thing scanned: it is a database, not a directory of
+            // files, and inventing a file count for it would be a number that means nothing.
+            progress.filesScanned += 1
+            progress.eventsInserted += inserted
+            onProgress?(progress)
+        }
         return progress
+    }
+
+    /// Drains opencode's database, resuming from the timestamp the last pass reached.
+    ///
+    /// Nil when there is nothing to read — no configured database, or opencode has never run
+    /// here. The watermark lives in `file_cursor` beside the byte offsets: same question,
+    /// "where did I stop", answered in the units this source has. A different inode means
+    /// the store was replaced, and the whole thing is read again.
+    @discardableResult
+    func indexOpencode() throws -> Int? {
+        guard let url = opencodeDatabase else { return nil }
+        let inode = (try? FileManager.default.attributesOfItem(atPath: url.path))
+            .flatMap { $0[.systemFileNumber] as? Int } ?? 0
+
+        let cursor = store.cursor(forPath: url.path)
+        let watermark = cursor?.inode == inode ? (cursor?.offset ?? 0) : 0
+
+        guard let reading = try OpencodeUsage.read(databaseURL: url, since: watermark) else {
+            return nil
+        }
+        let inserted = try store.insert(reading.events)
+        try store.setCursor(
+            UsageStore.Cursor(offset: reading.watermark, inode: inode), forPath: url.path)
+        return inserted
     }
 
     /// Reads one transcript from its stored offset onward.
@@ -130,6 +172,11 @@ public struct UsageIndexer {
                     if let event = parseCodex(line: data, into: &rollout) {
                         events.append(event)
                     }
+                case .opencode:
+                    // opencode has no transcript to walk; `indexOpencode` reads its
+                    // database. Nothing files a `.jsonl` under it, so this is unreachable
+                    // rather than unhandled.
+                    break
                 }
             }
         }

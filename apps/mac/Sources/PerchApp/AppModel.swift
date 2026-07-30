@@ -647,6 +647,9 @@ final class AppModel {
         // Both agents, whichever tab happens to be selected: a report is about the machine,
         // not about what is on screen.
         report.field("codex", usage.codexLimits == nil ? "no rollout" : "read")
+        // Stated rather than left out: "opencode is missing from the quota section" is a bug
+        // report someone would file, and the answer is that there is nothing to read.
+        report.field("opencode", "no plan window published locally")
         for window in usage.codexLimits?.limits.windows ?? [] {
             let used = String(format: "%.0f%% used", window.window.utilization ?? 0)
             report.field(

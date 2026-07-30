@@ -155,14 +155,14 @@ private func sampleEvent(id: String, request: String = "r1", tokens: Int = 100) 
     #expect(totals.inputTokens == 200)
 }
 
-/// Two agents share one table, told apart by the only thing that already distinguishes
-/// them: nothing but Claude Code writes `claude-*`. The regression this guards is the
-/// Claude tab quietly counting Codex tokens.
+/// Every agent shares one table, told apart by the column each reader writes. The
+/// regression this guards is the Claude tab quietly counting somebody else's tokens.
 @Test func eachAgentSeesOnlyItsOwnRows() throws {
     let (store, url) = try makeStore()
     defer { try? FileManager.default.removeItem(at: url) }
 
     var codex = sampleEvent(id: "gpt", tokens: 30)
+    codex.agent = .codex
     codex.model = "gpt-5.6-terra"
     _ = try store.insert([sampleEvent(id: "claude", tokens: 100), codex])
 
@@ -175,6 +175,56 @@ private func sampleEvent(id: String, request: String = "r1", tokens: Int = 100) 
     #expect(try store.buckets(.day, limit: 10, agent: .claude).count == 1)
 
     #expect(try store.hasUsage(for: .codex))
+    #expect(try store.agentsWithUsage() == [.claude, .codex])
+}
+
+/// Rows indexed before the column existed still have to land under the right tab. The
+/// backfill is the rule the column replaced — `gpt-*` was Codex, everything else Claude —
+/// applied once, so nothing on screen moves the day this ships.
+@Test func rowsIndexedBeforeTheAgentColumnAreFiledByTheOldRule() throws {
+    let url = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("perch-legacy-\(UUID().uuidString).sqlite")
+    defer { try? FileManager.default.removeItem(at: url) }
+
+    // The schema as it shipped, with no `agent` column at all.
+    let legacy = try SQLiteDatabase(path: url.path)
+    try legacy.execute(
+        """
+        CREATE TABLE usage_event (
+            msg_id TEXT NOT NULL, request_id TEXT NOT NULL, ts INTEGER NOT NULL,
+            model TEXT NOT NULL, input INTEGER NOT NULL, output INTEGER NOT NULL,
+            cache_read INTEGER NOT NULL, cache_write_5m INTEGER NOT NULL,
+            cache_write_1h INTEGER NOT NULL, cost REAL NOT NULL,
+            session_id TEXT, cwd TEXT, PRIMARY KEY (msg_id, request_id));
+        INSERT INTO usage_event VALUES
+            ('a','r',1,'claude-opus-4-8',100,0,0,0,0,0,NULL,NULL),
+            ('b','r',1,'gpt-5.6-terra',30,0,0,0,0,0,NULL,NULL),
+            ('c','r',1,'<synthetic>',7,0,0,0,0,0,NULL,NULL);
+        """)
+
+    let store = try UsageStore(path: url.path)
+    #expect(try store.totals(agent: .codex).inputTokens == 30)
+    // `<synthetic>` is Claude Code answering without calling a model, and it belongs where
+    // it always did rather than under the agent it does not name.
+    #expect(try store.totals(agent: .claude).inputTokens == 107)
+    #expect(try store.totals(agent: .opencode).inputTokens == 0)
+
+    // Opening it a second time must not undo the work of the first.
+    let reopened = try UsageStore(path: url.path)
+    #expect(try reopened.totals(agent: .claude).inputTokens == 107)
+
+    // The previous version of the app is still running during an upgrade, and its inserts
+    // know nothing of this column — they land on the empty default, under no tab at all.
+    // Three of those appeared within a minute of the first real migration, so the backfill
+    // has to run on every open rather than only on the one that adds the column.
+    try legacy.execute(
+        """
+        INSERT INTO usage_event (msg_id, request_id, ts, model, input, output,
+            cache_read, cache_write_5m, cache_write_1h, cost)
+        VALUES ('d','r',1,'claude-opus-5',5,0,0,0,0,0);
+        """)
+    let afterUpgrade = try UsageStore(path: url.path)
+    #expect(try afterUpgrade.totals(agent: .claude).inputTokens == 112)
 }
 
 /// Zero is not a price, it is the absence of one — and it reads on screen as "free".
@@ -185,6 +235,7 @@ private func sampleEvent(id: String, request: String = "r1", tokens: Int = 100) 
     defer { try? FileManager.default.removeItem(at: url) }
 
     var unpriced = sampleEvent(id: "gpt", tokens: 1_000_000)
+    unpriced.agent = .codex
     unpriced.model = "gpt-not-in-any-list"
     var priced = sampleEvent(id: "claude", tokens: 1_000_000)
     _ = try store.insert([unpriced, priced])
@@ -200,6 +251,24 @@ private func sampleEvent(id: String, request: String = "r1", tokens: Int = 100) 
     #expect(try store.totals(agent: .codex).cost == 2)
     // And the row that already had a price is left exactly as it was found.
     #expect(try store.totals(agent: .claude).cost == before.cost)
+}
+
+/// opencode publishes the price with the message, so a zero there is a price — a free
+/// model saying so — and not the absence of one. Repricing it would invent a bill for an
+/// API nobody called.
+@Test func opencodesOwnZeroIsAPriceAndIsLeftAlone() throws {
+    let (store, url) = try makeStore()
+    defer { try? FileManager.default.removeItem(at: url) }
+
+    var free = sampleEvent(id: "oc", tokens: 1_000_000)
+    free.agent = .opencode
+    free.model = "claude-opus-4-8"  // priced in the table, and still billed at nothing here
+    free.cost = 0
+    _ = try store.insert([free])
+
+    #expect(try store.totals(agent: .opencode).cost == 0)
+    _ = try store.repriceUnpriced()
+    #expect(try store.totals(agent: .opencode).cost == 0)
 }
 
 /// The selector only appears once there is a second agent to switch to; on a machine that

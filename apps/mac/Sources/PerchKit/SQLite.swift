@@ -21,14 +21,24 @@ public final class SQLiteDatabase {
 
     private var handle: OpaquePointer?
 
-    public init(path: String) throws {
+    /// Opens the database, creating it if it does not exist.
+    ///
+    /// `readOnly` is for the databases Perch does not own — opencode keeps its sessions in
+    /// one, and reading somebody else's store is a guest's job: no file is created, nothing
+    /// is written, and the journal mode is left exactly as its owner set it. The pragmas
+    /// below are configuration of *our* index, not of whatever we are being shown.
+    public init(path: String, readOnly: Bool = false) throws {
         var handle: OpaquePointer?
-        guard sqlite3_open(path, &handle) == SQLITE_OK, let handle else {
+        let flags =
+            readOnly
+            ? SQLITE_OPEN_READONLY : SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE
+        guard sqlite3_open_v2(path, &handle, flags, nil) == SQLITE_OK, let handle else {
             let message = handle.map { String(cString: sqlite3_errmsg($0)) } ?? "unknown"
             sqlite3_close(handle)
             throw Failure.open(message)
         }
         self.handle = handle
+        guard !readOnly else { return }
         // WAL keeps the indexer's writes from blocking the UI's reads.
         try execute("PRAGMA journal_mode = WAL")
         try execute("PRAGMA synchronous = NORMAL")

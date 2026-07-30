@@ -63,11 +63,17 @@ enum Diagnostics {
             // and this command exists to tell them apart.
             let codex = transcripts.filter { if case .codex = $0.source { true } else { false } }
             print("transcripts \(transcripts.count) files (\(codex.count) Codex)")
-            guard let first = transcripts.first else {
+            // opencode keeps no transcripts at all — one SQLite store, read in place — so
+            // it is reported as what it is rather than counted in the line above.
+            let opencode = OpencodeUsage.defaultDatabaseURL
+            let hasOpencode = FileManager.default.fileExists(atPath: opencode.path)
+            print("opencode    \(hasOpencode ? opencode.path : "no database")")
+            if let first = transcripts.first {
+                print("first       \(first.url.path)")
+            } else if !hasOpencode {
                 print("nothing to index — are ~/.claude/projects and ~/.codex/sessions present?")
                 return 1
             }
-            print("first       \(first.url.path)")
 
             let clock = ContinuousClock()
             var progress = UsageIndexer.Progress()
@@ -103,8 +109,19 @@ enum Diagnostics {
     @MainActor
     static func render(
         _ path: String, layout: PanelLayout = .detailed, idle: Bool = false,
-        phases: Bool = false
+        phases: Bool = false, stats: UsageStore.Agent? = nil
     ) -> Int32 {
+        if let stats {
+            // Real numbers, from this machine's index — the point of drawing this pane is
+            // to see which agents it offers and what they add up to, and a fabricated one
+            // would answer neither. The aggregates are read off the main actor, so the
+            // loop is pumped until they land rather than rendering an empty screen.
+            let usage = UsageModel()
+            usage.start()
+            usage.agent = stats
+            RunLoop.current.run(until: .now + 2)
+            return write(ImageRenderer(content: PanelPreview.statsScene(usage: usage)), to: path)
+        }
         if phases {
             // Every state in its real shape, over a menu bar: the only way to see what the
             // two top corners do without Screen Recording.

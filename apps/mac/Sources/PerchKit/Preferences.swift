@@ -28,7 +28,40 @@ public enum PanelLayout: String, Codable, Sendable, CaseIterable {
     public var showsTasks: Bool { self == .detailed }
 }
 
+/// What language Perch speaks, which is not the same question as what language the Mac is
+/// set to.
+///
+/// English is the default even on a French system. Perch is a panel over a CLI whose own
+/// output, flags and error messages are in English, and a French label above an English
+/// transcript reads worse than either language on its own. Someone who wants French can say
+/// so — the translation is there — but nobody has to opt out of a language they did not pick.
+public enum AppLanguage: String, Codable, Sendable, CaseIterable {
+    case english = "en"
+    case french = "fr"
+    /// Whatever macOS asks for, which is what an app normally does.
+    case system
+
+    /// A language names itself: `Français` rather than `French`, whichever language the rest
+    /// of the window happens to be in. Only `System` is a word about the setting, so only
+    /// that one is translated.
+    public var title: String {
+        switch self {
+        case .english: return "English"
+        case .french: return "Français"
+        case .system: return "System"
+        }
+    }
+
+    /// What to put in `AppleLanguages`, or nil to leave the choice to macOS.
+    public var localeIdentifiers: [String]? {
+        self == .system ? nil : [rawValue]
+    }
+}
+
 public struct Preferences: Codable, Sendable, Equatable {
+    /// Which language the interface is in. Read once, at launch, before anything is drawn.
+    public var language: AppLanguage
+
     /// Virtual key code for the switcher. `kVK_ANSI_P` by default.
     public var switcherKeyCode: UInt32
     /// Carbon modifier mask. Control + Option by default.
@@ -77,8 +110,10 @@ public struct Preferences: Codable, Sendable, Equatable {
         betaUpdates: Bool = false,
         layout: PanelLayout = .detailed,
         showsRemainingQuota: Bool = false,
-        quotaWarningThreshold: Double = 90
+        quotaWarningThreshold: Double = 90,
+        language: AppLanguage = .english
     ) {
+        self.language = language
         self.switcherKeyCode = switcherKeyCode
         self.switcherModifiers = switcherModifiers
         self.switcherEnabled = switcherEnabled
@@ -122,6 +157,12 @@ public struct Preferences: Codable, Sendable, Equatable {
         quotaWarningThreshold =
             try container.decodeIfPresent(Double.self, forKey: .quotaWarningThreshold)
             ?? defaults.quotaWarningThreshold
+        // A file written before this setting existed means "never chose", which is English —
+        // the same thing a fresh install gets, rather than a silent switch to the system
+        // language for the people who already had Perch.
+        language =
+            try container.decodeIfPresent(AppLanguage.self, forKey: .language)
+            ?? defaults.language
     }
 
     /// Clamped rather than validated: a tuning slider should never be able to make the

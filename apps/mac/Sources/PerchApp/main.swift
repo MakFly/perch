@@ -1,4 +1,5 @@
 import AppKit
+import PerchKit
 import SwiftUI
 import UserNotifications
 
@@ -21,6 +22,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.stop()
     }
 }
+
+// Before `NSApplication`, not merely before the first window: AppKit resolves the bundle's
+// localisation as it starts up, and a language written after that lands one launch late.
+// English is the default whatever the Mac is set to.
+applyLanguagePreference()
 
 let application = NSApplication.shared
 
@@ -63,7 +69,16 @@ if let index = CommandLine.arguments.firstIndex(of: "--render") {
             // `--render x.png --idle` draws the resting strip instead of the panel, and
             // `--phases` draws every state in its own shape, over a menu bar.
             idle: CommandLine.arguments.contains("--idle"),
-            phases: CommandLine.arguments.contains("--phases")))
+            phases: CommandLine.arguments.contains("--phases"),
+            // `--render x.png --stats opencode` draws the Stats pane for one agent, off
+            // this machine's own index. The tabs are the one part of that pane no
+            // fabricated scene can stand in for: whether they are right is a question
+            // about what was actually indexed here.
+            stats: CommandLine.arguments.firstIndex(of: "--stats").map { index in
+                CommandLine.arguments.count > index + 1
+                    ? UsageStore.Agent(rawValue: CommandLine.arguments[index + 1]) ?? .claude
+                    : .claude
+            }))
 }
 
 if let index = CommandLine.arguments.firstIndex(of: "--tasks") {

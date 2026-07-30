@@ -29,6 +29,20 @@ enum PanelPreview {
         .background(Theme.surface)
     }
 
+    /// The Stats pane, drawn from the real index rather than from fabricated sessions.
+    ///
+    /// The rest of this file invents its data, because a card's shape is what is being
+    /// looked at. The Stats pane is the opposite: which tabs it offers, and what each one
+    /// adds up to, is a statement about what this machine has actually run — so this one
+    /// reads the store.
+    static func statsScene(usage: UsageModel) -> some View {
+        StatsView(usage: usage)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .frame(width: 680, alignment: .topLeading)
+            .background(Theme.surface)
+    }
+
     private static var header: some View {
         HStack(spacing: 8) {
             ForEach(["activity", "stats", "rank"], id: \.self) { tab in

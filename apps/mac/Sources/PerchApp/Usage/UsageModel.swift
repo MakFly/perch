@@ -30,14 +30,23 @@ final class UsageModel {
         didSet { if agent != oldValue { reload() } }
     }
 
-    /// Whether there is a second agent to switch to. False on a machine that has only ever
-    /// run Claude Code, where the selector would be a control with one setting.
-    private(set) var hasCodex = false
+    /// Which agents this machine has actually run. The selector only appears from two on:
+    /// on a machine that has only ever run Claude Code it would be a control with one
+    /// setting, and a tab for an agent that never ran here opens onto an empty screen.
+    private(set) var agents: [UsageStore.Agent] = [.claude]
 
     /// Nil means nothing has been read yet, and the panel offers to connect instead of
     /// showing a wrong zero.
+    ///
+    /// opencode is nil for a different reason, and permanently: it bills each provider
+    /// directly and publishes no window anywhere on disk. The view says so rather than
+    /// offering the Claude bridge, which would fix nothing there.
     var limits: UsageLimitsReader.Reading? {
-        agent == .codex ? codexLimits : bridgeLimits
+        switch agent {
+        case .claude: return bridgeLimits
+        case .codex: return codexLimits
+        case .opencode: return nil
+        }
     }
 
     /// Quota reported by remote hosts, keyed by the alias you gave them. A build server
@@ -199,7 +208,7 @@ final class UsageModel {
                             buckets: try store.buckets(
                                 granularity, limit: bucketCount, agent: agent),
                             byModel: try store.totalsByModel(since: startOfDay, agent: agent),
-                            hasCodex: try store.hasUsage(for: .codex)))
+                            agents: try store.agentsWithUsage()))
                 } catch {
                     return .failure(error)
                 }
@@ -211,7 +220,9 @@ final class UsageModel {
                 allTime = aggregates.allTime
                 buckets = aggregates.buckets
                 byModel = aggregates.byModel
-                hasCodex = aggregates.hasCodex
+                // Always at least the tab you are on: a fresh install has indexed nothing,
+                // and an empty list would take the selector away mid-look.
+                agents = aggregates.agents.isEmpty ? [agent] : aggregates.agents
             case .failure(let error):
                 indexError = "\(error)"
             }
@@ -224,7 +235,7 @@ final class UsageModel {
         var allTime: UsageStore.Totals
         var buckets: [UsageStore.Bucket]
         var byModel: [(model: String, tokens: Int, cost: Double)]
-        var hasCodex: Bool
+        var agents: [UsageStore.Agent]
     }
 
     /// How many buckets the sparkline shows — one screen's worth per granularity.

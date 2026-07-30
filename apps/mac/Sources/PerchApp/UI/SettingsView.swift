@@ -136,6 +136,33 @@ private struct GeneralPane: View {
             }
 
             Section(
+                t("Language"),
+                note: t(
+                    "English by default, whatever the Mac is set to: the agent it sits over "
+                        + "speaks English, and one window in two languages reads worse than "
+                        + "either.")
+            ) {
+                Picker(t("Language"), selection: language) {
+                    ForEach(AppLanguage.allCases, id: \.self) { option in
+                        Text(t(option.title)).tag(option)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+
+                // The change is stored either way; the button is only about seeing it. A
+                // bundle resolves its localisation once per process, so the window would
+                // otherwise stay in the old language until the next launch — which reads as
+                // a setting that did not work.
+                HStack {
+                    Button(t("Relaunch Perch")) { relaunchPerch() }
+                    Text(t("A language change takes effect when Perch starts."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Section(
                 t("Notch"),
                 note: "Zero trusts what macOS reports, which is right on every Mac this has "
                     + "been measured on. Adjust only if the panel does not sit over the cutout."
@@ -291,6 +318,20 @@ private struct GeneralPane: View {
                 var next = model.preferences
                 next.layout = value
                 model.updatePreferences(next)
+            })
+    }
+
+    private var language: Binding<AppLanguage> {
+        Binding(
+            get: { model.preferences.language },
+            set: { value in
+                var next = model.preferences
+                next.language = value
+                model.updatePreferences(next)
+                // Written to `AppleLanguages` now rather than at the next launch, so a
+                // relaunch — by the button beside it or by hand — comes back in the right
+                // language whichever way it happens.
+                applyLanguagePreference(next)
             })
     }
 

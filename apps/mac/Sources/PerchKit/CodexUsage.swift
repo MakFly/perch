@@ -128,6 +128,7 @@ public struct CodexRollout: Sendable {
         let cached = min(last["cached_input_tokens"] as? Int ?? 0, input)
 
         return UsageEvent(
+            agent: .codex,
             // A rollout has no request id, so the pair is the session and the instant. Both
             // survive a re-read, which is what the store's `(msg_id, request_id)` key needs
             // to recognise a line it has already counted.

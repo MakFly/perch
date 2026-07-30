@@ -76,6 +76,24 @@ import Testing
     #expect(preferences.blockedLaunchers.isEmpty)
 }
 
+/// English whatever the Mac says, and English for everyone who had Perch before this
+/// setting existed — a file with no `language` key means "never chose", not "follow the
+/// system". The alternative would switch the interface under people who had not asked.
+@Test func englishIsTheDefaultAndAnOlderFileKeepsIt() throws {
+    #expect(Preferences().language == .english)
+
+    let raw = #"{"switcherKeyCode": 12}"#.data(using: .utf8)!
+    #expect(try JSONDecoder().decode(Preferences.self, from: raw).language == .english)
+}
+
+/// `.system` is the absence of an override, so it names no locale to write. The other two
+/// name exactly one — what goes into `AppleLanguages`.
+@Test func onlyAChosenLanguageOverridesTheSystem() {
+    #expect(AppLanguage.system.localeIdentifiers == nil)
+    #expect(AppLanguage.english.localeIdentifiers == ["en"])
+    #expect(AppLanguage.french.localeIdentifiers == ["fr"])
+}
+
 /// Saving clamps too, so a bad value cannot be written and then read back as gospel.
 @Test func preferencesSurviveARoundTripThroughDisk() {
     let url = URL(fileURLWithPath: NSTemporaryDirectory())

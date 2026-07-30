@@ -100,6 +100,39 @@ public final class UsageStore: @unchecked Sendable {
                 offset INTEGER NOT NULL
             );
             """)
+        try addAgentColumn()
+    }
+
+    /// Records which agent produced a row, instead of guessing it from the model name.
+    ///
+    /// The guess worked while there were two: nothing but Codex wrote `gpt-*` into this
+    /// table. opencode runs whatever model it is pointed at — Claude and GPT included — so
+    /// the name stopped identifying anything, and a third tab could not have been built on
+    /// it. The rows already indexed are backfilled with the very rule the column replaces,
+    /// which is why the numbers on screen do not move when this runs.
+    ///
+    /// The backfill runs on every open, not only on the one that adds the column. During an
+    /// upgrade the previous version is still running, and its inserts — which know nothing
+    /// of this column — land on the empty default: rows belonging to no agent, and therefore
+    /// showing under no tab. Three of them appeared within a minute of the first migration
+    /// on this machine. Naming them on the next open costs one indexless scan and is the
+    /// difference between a tab that is right and a tab that is quietly short.
+    private func addAgentColumn() throws {
+        var columns: [String] = []
+        try database.query("PRAGMA table_info(usage_event)") { row in
+            if let name = row.string(1) { columns.append(name) }
+        }
+        if !columns.contains("agent") {
+            try database.execute(
+                "ALTER TABLE usage_event ADD COLUMN agent TEXT NOT NULL DEFAULT ''")
+        }
+
+        try database.execute(
+            """
+            UPDATE usage_event
+               SET agent = CASE WHEN model LIKE 'gpt%' THEN 'codex' ELSE 'claude' END
+             WHERE agent = ''
+            """)
     }
 
     // MARK: - Writing
@@ -114,15 +147,22 @@ public final class UsageStore: @unchecked Sendable {
     ///
     /// So this corrects only the zeroes, only for models that now have a price, and leaves
     /// every priced row exactly as it was found.
+    ///
+    /// opencode's rows are left alone whatever they say. It publishes the price with the
+    /// message, so a zero there *is* a price — a free model, or a plan that did not bill
+    /// this call — and overwriting it with what the tokens would have cost through an API
+    /// nobody called would be inventing a number, not repairing one.
+    ///
     /// The lookup is a parameter so a test can hand it a table without mutating the
     /// process-wide one and leaking a price into every case that runs after it.
     @discardableResult
     public func repriceUnpriced(
         using price: (String) -> ModelPricing? = { Pricing.pricing(for: $0) }
     ) throws -> Int {
+        let unpriced = "cost = 0 AND agent <> '\(Agent.opencode.rawValue)'"
         var models: [String] = []
         try database.query(
-            "SELECT DISTINCT model FROM usage_event WHERE cost = 0"
+            "SELECT DISTINCT model FROM usage_event WHERE \(unpriced)"
         ) { row in
             if let model = row.string(0) { models.append(model) }
         }
@@ -140,7 +180,7 @@ public final class UsageStore: @unchecked Sendable {
                      + cache_write_5m * \(price.cacheWrite5mPerMillion)
                      + cache_write_1h * \(price.cacheWrite1hPerMillion)) / \(million)
                 WHERE model = '\(model.replacingOccurrences(of: "'", with: "''"))'
-                  AND cost = 0
+                  AND \(unpriced)
                 """)
             repriced += 1
         }
@@ -157,8 +197,9 @@ public final class UsageStore: @unchecked Sendable {
                 """
                 INSERT OR IGNORE INTO usage_event
                     (msg_id, request_id, ts, model, input, output,
-                     cache_read, cache_write_5m, cache_write_1h, cost, session_id, cwd)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                     cache_read, cache_write_5m, cache_write_1h, cost, session_id, cwd,
+                     agent)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
                 """)
             defer { statement.finalize() }
 
@@ -173,9 +214,14 @@ public final class UsageStore: @unchecked Sendable {
                 statement.bind(7, event.cacheReadTokens)
                 statement.bind(8, event.cacheWrite5mTokens)
                 statement.bind(9, event.cacheWrite1hTokens)
-                statement.bind(10, Pricing.cost(of: event))
+                // What the agent says it was billed, when it says so. opencode prices each
+                // message itself, against a list that covers every provider it can reach;
+                // deriving that from Perch's own table would report the models it does not
+                // carry at zero, which reads as free rather than as unpriced.
+                statement.bind(10, event.cost ?? Pricing.cost(of: event))
                 statement.bind(11, event.sessionId)
                 statement.bind(12, event.cwd)
+                statement.bind(13, event.agent.rawValue)
                 try statement.step()
                 inserted += changesInLastStatement()
                 statement.reset()
@@ -219,24 +265,18 @@ public final class UsageStore: @unchecked Sendable {
 
     /// Which agent's rows a query is about.
     ///
-    /// Told apart by the model name rather than by a column, because that is what the name
-    /// already is: nothing but Claude Code writes `claude-*`, and nothing but Codex writes
-    /// the rest into this table. A column would be a migration and a second thing to keep
-    /// true; this is one predicate, written once here so the five queries cannot drift.
+    /// Told apart by a column, written by whichever reader produced the row. It used to be
+    /// told apart by the model name — `gpt-*` was Codex and everything else was Claude —
+    /// which held for exactly as long as each agent had its own vendor. opencode picks its
+    /// model from a list that spans every provider, so it can and does write `claude-*` and
+    /// `gpt-*` rows; under the old rule its tokens would have been filed under the two tabs
+    /// it is not.
     public enum Agent: String, Sendable, CaseIterable {
         case claude
         case codex
+        case opencode
 
-        /// Codex is the one named, and everything else falls to Claude — including
-        /// `<synthetic>`, which Claude Code writes for a response it produced without
-        /// calling a model. Matching on `claude%` instead would file those under Codex,
-        /// which is where the first version of this put eight of them.
-        var predicate: String {
-            switch self {
-            case .claude: return "model NOT LIKE 'gpt%'"
-            case .codex: return "model LIKE 'gpt%'"
-            }
-        }
+        var predicate: String { "agent = '\(rawValue)'" }
     }
 
     /// `WHERE` for a time bound and an agent, either of which may be absent.
@@ -247,14 +287,26 @@ public final class UsageStore: @unchecked Sendable {
         return terms.isEmpty ? "" : "WHERE " + terms.joined(separator: " AND ")
     }
 
-    /// True once anything but Claude has been indexed — which is what decides whether the
-    /// panel offers the choice at all. An empty selector is worse than none.
+    /// True once that agent has been indexed at all.
     public func hasUsage(for agent: Agent) throws -> Bool {
         var found = false
         try database.query(
             "SELECT 1 FROM usage_event WHERE \(agent.predicate) LIMIT 1"
         ) { _ in found = true }
         return found
+    }
+
+    /// Which agents this machine has actually run, in the order the tabs list them.
+    ///
+    /// One query rather than one per agent, and it decides whether the selector appears at
+    /// all: a tab bar with a single tab is a control with one setting, and a tab for an
+    /// agent that has never run here is a tab onto an empty screen.
+    public func agentsWithUsage() throws -> [Agent] {
+        var found: Set<String> = []
+        try database.query("SELECT DISTINCT agent FROM usage_event") { row in
+            if let agent = row.string(0) { found.insert(agent) }
+        }
+        return Agent.allCases.filter { found.contains($0.rawValue) }
     }
 
     public func totals(since: Date? = nil, agent: Agent? = nil) throws -> Totals {

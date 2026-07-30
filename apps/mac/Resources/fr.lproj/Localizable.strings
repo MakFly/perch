@@ -48,6 +48,7 @@
 "7d Sonnet" = "7 j Sonnet";
 "No plan limits on this account — API key, Bedrock or Vertex." = "Aucune limite de forfait sur ce compte — clé API, Bedrock ou Vertex.";
 "Not connected. Run ./scripts/usage-bridge.sh, then restart your sessions." = "Non connecté. Lance ./scripts/usage-bridge.sh, puis redémarre tes sessions.";
+"No plan window: opencode bills each provider directly and publishes no quota locally. What is below is what it spent." = "Pas de fenêtre de forfait : opencode facture chaque fournisseur directement et ne publie aucun quota en local. Ce qui suit est ce qu'il a dépensé.";
 
 /* Jetons */
 "Tokens" = "Jetons";
@@ -55,6 +56,8 @@
 "today" = "aujourd'hui";
 "all time" = "total";
 "cache read" = "lecture cache";
+"%lld%% of today" = "%lld%% aujourd'hui";
+"peak %@" = "pic %@";
 "No usage indexed yet." = "Aucun usage indexé pour l'instant.";
 
 /* Carte de permission */
@@ -178,6 +181,13 @@
 "Clean" = "Épuré";
 "Detailed" = "Détaillé";
 "Clean keeps one line of chrome per session, so six agents still fit on screen. Detailed adds what you asked and the plan it is working through." = "Épuré garde une ligne par session, pour que six agents tiennent encore à l'écran. Détaillé ajoute ce que vous avez demandé et le plan en cours.";
+
+/* Langue. « English » et « Français » se nomment eux-mêmes et ne se traduisent pas. */
+"Language" = "Langue";
+"System" = "Système";
+"English by default, whatever the Mac is set to: the agent it sits over speaks English, and one window in two languages reads worse than either." = "Anglais par défaut, quelle que soit la langue du Mac : l'agent qu'il surveille parle anglais, et une fenêtre en deux langues se lit moins bien que dans l'une ou l'autre.";
+"Relaunch Perch" = "Relancer Perch";
+"A language change takes effect when Perch starts." = "Un changement de langue prend effet au démarrage de Perch.";
 
 /* Menu, notifications */
 "Settings…" = "Réglages…";
