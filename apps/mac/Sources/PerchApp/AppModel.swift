@@ -210,8 +210,14 @@ final class AppModel {
             activity.holdSteady(isVisible)
             if isVisible {
                 transcripts.start { [weak self] in await self?.refreshTranscripts() }
+                // The quota was only ever re-read when a hook fired, so a panel opened on a
+                // quiet machine showed whatever the last tool call left behind — minutes
+                // old, and looking live. It moves while nothing here is running, so it is
+                // watched while it is being looked at.
+                usage.startWatchingLimits()
             } else {
                 transcripts.stop()
+                usage.stopWatchingLimits()
             }
         }
 

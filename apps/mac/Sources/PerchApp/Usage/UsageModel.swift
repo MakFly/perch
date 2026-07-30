@@ -79,6 +79,8 @@ final class UsageModel {
     @ObservationIgnored private var store: UsageStore?
     @ObservationIgnored private var indexer: UsageIndexer?
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
+    /// Runs only while the panel is on screen. See `startWatchingLimits`.
+    @ObservationIgnored private var limitsTask: Task<Void, Never>?
 
     func start() {
         // Before the first cost is computed rather than racing it: yesterday's cached
@@ -130,15 +132,56 @@ final class UsageModel {
         }
     }
 
+    /// How long the coalescing may hold out before it has to let a refresh through.
+    ///
+    /// The debounce cancels and reschedules on every hook event, which is right for a burst
+    /// and wrong for a turn: a session calling a tool every second or two resets the timer
+    /// before it ever fires, so the numbers freeze for exactly as long as the agent is
+    /// working — which is exactly when they move. Seen on screen as a plan bar reading 2%
+    /// that jumped to 8% the moment a tab was switched, because switching is what forced a
+    /// read.
+    private static let maximumWait: TimeInterval = 10
+
     /// Coalesces the bursts of hook events a single Claude Code turn produces into one
-    /// re-index, instead of scanning per tool call.
+    /// re-index, instead of scanning per tool call — but never for longer than
+    /// `maximumWait`.
     func scheduleRefresh(after delay: Duration = .seconds(3)) {
+        // Nothing indexed yet, or nothing for a while: run now and let the burst coalesce
+        // from here. An index already running will call `reload` when it finishes, so the
+        // trailing one is still scheduled rather than dropped.
+        let overdue = lastIndexedAt.map { Date.now.timeIntervalSince($0) >= Self.maximumWait }
+        if overdue ?? true, !isIndexing {
+            refresh()
+            return
+        }
+
         refreshTask?.cancel()
         refreshTask = Task { [weak self] in
             try? await Task.sleep(for: delay)
             guard !Task.isCancelled else { return }
             self?.refresh()
         }
+    }
+
+    /// Re-reads the quota for as long as someone is looking at it.
+    ///
+    /// Two small files, so this is cheap enough to do on a short interval — and it is the
+    /// number people open the panel for. Nothing else here polls: the tokens follow the
+    /// hooks, which is when there is new usage to read, while the quota moves whether or
+    /// not this machine is the one spending it.
+    func startWatchingLimits(every interval: Duration = .seconds(2)) {
+        guard limitsTask == nil else { return }
+        limitsTask = Task { [weak self] in
+            while !Task.isCancelled {
+                self?.reloadLimits()
+                try? await Task.sleep(for: interval)
+            }
+        }
+    }
+
+    func stopWatchingLimits() {
+        limitsTask?.cancel()
+        limitsTask = nil
     }
 
     /// Cheap enough to do on every reload: one small file, read off the main actor's hot

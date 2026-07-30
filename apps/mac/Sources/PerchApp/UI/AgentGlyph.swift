@@ -108,7 +108,7 @@ struct AgentGlyph: View {
         }
     }
 
-    /// The bundled sprite sheet for this agent, if one shipped.
+    /// The sprite sheet for this agent, from `~/.perch/sprites` or from the bundle.
     ///
     /// Cut apart once and cached for the process, misses included: a glyph is drawn on
     /// every redraw of a panel that redraws on every hook event, and neither reading a PNG
@@ -121,8 +121,11 @@ struct AgentGlyph: View {
             .claude: "agent-claude", .codex: "agent-codex", .gemini: "agent-gemini",
         ]
         let loaded = names[agent]
-            .flatMap {
-                Bundle.main.url(forResource: $0, withExtension: "png", subdirectory: "Sprites")
+            .flatMap { name in
+                SpriteLocation.sheetURL(
+                    named: name,
+                    bundled: Bundle.main.url(
+                        forResource: name, withExtension: "png", subdirectory: "Sprites"))
             }
             .flatMap(SpriteSheet.load)
         sheets[agent] = loaded
