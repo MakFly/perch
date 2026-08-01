@@ -165,12 +165,30 @@ final class AppModel {
     }
 
     /// One pass: read every live session's transcript off the main actor, then publish.
+    ///
+    /// Codex rides along here rather than on a watcher of its own. It is the same question
+    /// asked on the same tick — what is happening right now — and the same answer: a
+    /// directory listing and a bounded read, off the main actor, only while the panel is
+    /// open. A second timer would be a second thing to stop when it closes.
     private func refreshTranscripts() async {
+        await refreshCodexSessions()
+
         let paths = activity.transcriptPaths
         guard !paths.isEmpty else { return }
         let turns = await transcripts.read(paths: paths)
         guard !turns.isEmpty else { return }
         activity.applyTurns(turns)
+    }
+
+    /// The Codex sessions that are writing right now, read off disk because no hook will
+    /// tell us about them — the desktop app shares `~/.codex` and does not run them.
+    private func refreshCodexSessions() async {
+        let timeout = activity.preferences.idleTimeout
+        let sessions = await Task.detached(priority: .userInitiated) {
+            CodexSessions.live(activeWithin: timeout)
+        }.value
+        guard !sessions.isEmpty else { return }
+        activity.applyCodex(sessions)
     }
 
     func start() {

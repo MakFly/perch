@@ -194,6 +194,45 @@ public struct SessionTracker: Sendable {
         sessions[id] = session
     }
 
+    /// Records a session Perch is *watching* rather than being told about.
+    ///
+    /// Everything below arrives as a hook: an event name, which the switch at the end turns
+    /// into a state. Codex desktop sessions arrive as a file being written — the reader has
+    /// already worked out the state, and there is no event to name. Passing one anyway meant
+    /// choosing a hook whose side effects happened to be right, and the two that mapped to
+    /// the states needed here, `UserPromptSubmit` and `Stop`, are both in `lifecycleKinds`:
+    /// their detail is deliberately dropped, because "SubagentStart" is not what a card
+    /// should say. A watched session would have lost its activity line to that rule.
+    ///
+    /// So the state comes in as a state. Everything else — the merge, the hold, the pruning
+    /// — is what `record` does, because a card should not be able to tell where it came from.
+    public mutating func observe(
+        id: String,
+        status: SessionStatus,
+        cwd: String? = nil,
+        detail: String = "",
+        agent: Agent? = nil,
+        aiTitle: String? = nil,
+        at date: Date = .now
+    ) {
+        var session =
+            sessions[id]
+            ?? SessionSnapshot(
+                id: id, cwd: cwd, lastEvent: date, lastDetail: detail,
+                status: status, subagents: 0, startedAt: date)
+
+        session.cwd = cwd ?? session.cwd
+        session.lastEvent = date
+        if !detail.isEmpty { session.lastDetail = detail }
+        if let agent { session.agent = agent }
+        if let aiTitle, !aiTitle.isEmpty { session.aiTitle = aiTitle }
+        session.status = status
+
+        sessions[id] = session
+        if holdsSteady, status != .idle { heldVisible.insert(id) }
+        prune(now: date)
+    }
+
     public mutating func record(
         id: String,
         kind: String,

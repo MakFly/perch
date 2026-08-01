@@ -162,6 +162,39 @@ enum Diagnostics {
     /// `Perch --tasks <session id>` prints the plan Perch would draw under that session's
     /// card, straight from disk. With no id, lists the sessions that have one — which is
     /// how you find the id in the first place.
+    /// What Perch can see of Codex right now, without a running app.
+    ///
+    /// Codex reaches the island through the rollouts it writes rather than through hooks —
+    /// the desktop app shares `~/.codex` and does not run them — which makes "why is my
+    /// Codex session not on a card" a question about files rather than about events. This
+    /// answers it in the same terms the panel uses.
+    static func codex(activeWithin: TimeInterval = 30 * 60) -> Int32 {
+        let sessions = CodexSessions.live(activeWithin: activeWithin)
+        print("rollouts    \(CodexSessions.defaultRoot.path)")
+        print("names       \(CodexSessions.defaultIndex.path)")
+        guard !sessions.isEmpty else {
+            print(
+                "no Codex session has written in the last "
+                    + "\(Int(activeWithin / 60)) minutes")
+            return 1
+        }
+
+        print("sessions    \(sessions.count)")
+        for session in sessions {
+            let project = session.cwd.map { URL(fileURLWithPath: $0).lastPathComponent }
+            let age = Int(Date.now.timeIntervalSince(session.updatedAt))
+            let state =
+                session.isWorking(within: 45)
+                ? (session.isRunningTool ? "runningTool" : "working") : "idle"
+            print(
+                "  \(session.id.prefix(8))  \(session.originator ?? "Codex")  "
+                    + "\(project ?? "?")  [\(state)]  “\(session.title ?? "—")”")
+            if !session.detail.isEmpty { print("      \(session.detail)") }
+            print("      last written \(age)s ago")
+        }
+        return 0
+    }
+
     static func tasks(_ sessionId: String) -> Int32 {
         let root = TaskReader.defaultRoot()
         guard !sessionId.isEmpty else {

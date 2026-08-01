@@ -39,6 +39,10 @@ if CommandLine.arguments.contains("--status") {
     exit(Diagnostics.status())
 }
 
+if CommandLine.arguments.contains("--codex") {
+    exit(Diagnostics.codex())
+}
+
 if CommandLine.arguments.contains("--index") {
     exit(Diagnostics.index())
 }

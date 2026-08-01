@@ -452,3 +452,56 @@ private let epoch = Date(timeIntervalSince1970: 1_700_000_000)
     #expect(tracker.sessions["quiet"]?.status.needsYou == false)
     #expect(tracker.workingCount == 0)
 }
+
+@Suite("Watched sessions")
+struct WatchedSessionTests {
+
+    /// The reason `observe` exists at all.
+    ///
+    /// A watched session's state was first passed through `record` as an invented event
+    /// name, and the two names that mapped to the states needed — `UserPromptSubmit` and
+    /// `Stop` — are both lifecycle kinds, whose detail `record` throws away on purpose. A
+    /// Codex card would have shown no activity line at all except while running a tool.
+    @Test func aWatchedSessionKeepsItsActivityLine() {
+        var tracker = SessionTracker()
+        tracker.observe(
+            id: "codex-1", status: .working, cwd: "/x/iautos-mobile",
+            detail: "exec: npm test", agent: .codex, aiTitle: "Revoir les tabs")
+
+        let session = tracker.sessions["codex-1"]
+        #expect(session?.lastDetail == "exec: npm test")
+        #expect(session?.status == .working)
+        #expect(session?.agent == .codex)
+        #expect(session?.aiTitle == "Revoir les tabs")
+        #expect(session?.projectName == "iautos-mobile")
+    }
+
+    /// State comes in as state, so it can go anywhere the reducer could put it.
+    @Test func aWatchedSessionCanReachAnyStateDirectly() {
+        var tracker = SessionTracker()
+        for status: SessionStatus in [.working, .runningTool, .idle] {
+            tracker.observe(id: "codex-1", status: status, detail: "x")
+            #expect(tracker.sessions["codex-1"]?.status == status)
+        }
+    }
+
+    /// An empty detail is silence, not an instruction to blank the card — the same rule
+    /// the hook path follows, so a card cannot tell where it was fed from.
+    @Test func anEmptyDetailLeavesTheLastOneStanding() {
+        var tracker = SessionTracker()
+        tracker.observe(id: "codex-1", status: .runningTool, detail: "exec: npm test")
+        tracker.observe(id: "codex-1", status: .idle, detail: "")
+        #expect(tracker.sessions["codex-1"]?.lastDetail == "exec: npm test")
+        #expect(tracker.sessions["codex-1"]?.status == .idle)
+    }
+
+    /// A watched session ages out on the same clock as a hook-fed one.
+    @Test func aWatchedSessionIsPrunedLikeAnyOther() {
+        var tracker = SessionTracker(timeout: 60)
+        tracker.observe(
+            id: "codex-1", status: .working, detail: "x",
+            at: Date().addingTimeInterval(-3600))
+        tracker.prune(now: Date())
+        #expect(tracker.sessions["codex-1"] == nil)
+    }
+}

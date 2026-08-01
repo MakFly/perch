@@ -66,6 +66,53 @@ final class ActivityStore {
         for (id, turn) in turns { tracker.setTurn(turn, for: id) }
     }
 
+    /// Sessions a hook has spoken for. See `applyCodex`.
+    private var hookFed: Set<String> = []
+
+    /// Puts the Codex sessions read off disk onto the same cards as everything else.
+    ///
+    /// Codex reaches the panel without hooks, because the desktop app does not run them —
+    /// it shares `~/.codex` with the CLI and is an Electron application, so the rollout it
+    /// writes is the only thing there is to read. `CodexSessions` turns that into the same
+    /// shape a hook would have produced, and it arrives here rather than through `record`
+    /// because there is no request behind it and nothing waiting on an answer.
+    ///
+    /// A session that has sent a hook is left alone. Both paths key on the same
+    /// `session_id`, so a machine whose Codex hooks do fire would otherwise have two
+    /// writers on one card — the hook, which knows the moment a tool starts, and the
+    /// rollout, which knows a second later. The hook wins on the sessions it covers.
+    func applyCodex(_ sessions: [CodexSessions.Live], now: Date = .now) {
+        for session in sessions where !hookFed.contains(session.id) {
+            guard !isSilenced(directory: session.cwd) else { continue }
+            // Silence is the only end-of-turn signal a rollout has, so a session that has
+            // stopped writing is one that has stopped working.
+            let status: SessionStatus =
+                session.isWorking(now: now, within: Self.codexWorkingWindow)
+                ? (session.isRunningTool ? .runningTool : .working)
+                : .idle
+            tracker.observe(
+                id: session.id,
+                status: status,
+                cwd: session.cwd,
+                detail: session.detail,
+                agent: .codex,
+                aiTitle: session.title,
+                at: session.updatedAt)
+        }
+    }
+
+    /// How long after its last written line a Codex session still counts as mid-turn.
+    ///
+    /// A rollout has no "the turn ended" line to read, so this is the gap that stands in
+    /// for one. Long enough that a single slow tool call does not read as a finished turn,
+    /// short enough that a session waiting on a person stops claiming to be busy.
+    private static let codexWorkingWindow: TimeInterval = 45
+
+    /// The admission rules, asked without a hook payload to ask them about.
+    private func isSilenced(directory: String?) -> Bool {
+        admission.isSilenced(directory: directory, prompt: nil)
+    }
+
     /// Which transcripts are worth re-reading right now: the live ones that have a path.
     var transcriptPaths: [String: String] {
         tracker.sessions.compactMapValues(\.transcriptPath)
@@ -112,6 +159,8 @@ final class ActivityStore {
 
         if let id = event.sessionId {
             if tracker.sessions[id] == nil { sessionsEverSeen += 1 }
+            // Claimed by the hook path, so the rollout reader stays off this card.
+            hookFed.insert(id)
             tracker.record(
                 id: id,
                 kind: event.kind,
