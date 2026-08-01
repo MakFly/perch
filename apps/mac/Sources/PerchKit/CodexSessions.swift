@@ -100,12 +100,20 @@ public enum CodexSessions {
 
         for url in recentRollouts(root: root, now: now, activeWithin: activeWithin) {
             guard let modified = modificationDate(of: url) else { continue }
-            // The id is in the filename, so a rollout whose header cannot be read is still
-            // a session rather than nothing.
-            guard let id = CodexRollout.sessionId(inFilename: url.lastPathComponent) else {
-                continue
-            }
             let header = meta(of: url)
+            // The header's session id wins, and the filename is the fallback.
+            //
+            // They disagree, and the disagreement is the point. One `codex exec` run
+            // produced two files a second apart — a short one and the 475 KB where the work
+            // actually happened — with different uuids in their names and the *same*
+            // `session_id` inside. Keyed on the filename that is two cards for one run;
+            // keyed on the header it is one, which is what it is. A rollout whose header
+            // cannot be read is still a session, so the filename remains the fallback.
+            guard
+                let id = header.sessionId
+                    ?? CodexRollout.sessionId(inFilename: url.lastPathComponent)
+            else { continue }
+
             let activity = lastActivity(in: url)
             sessions.append(
                 Live(
@@ -118,8 +126,15 @@ public enum CodexSessions {
                     updatedAt: modified))
         }
 
-        // Newest first, which is the order the strip draws them in.
-        return sessions.sorted { $0.updatedAt > $1.updatedAt }
+        // Newest first, which is the order the strip draws them in — and the order that
+        // makes the first entry per id the one to keep when a session wrote two files.
+        return sessions
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .reduce(into: (seen: Set<String>(), kept: [Live]())) { result, session in
+                guard result.seen.insert(session.id).inserted else { return }
+                result.kept.append(session)
+            }
+            .kept
     }
 
     // MARK: - Finding them
@@ -170,6 +185,9 @@ public enum CodexSessions {
     // MARK: - Reading one
 
     struct Meta: Equatable {
+        /// The session this rollout belongs to, which is not always the one its filename
+        /// names. See `live`.
+        var sessionId: String?
         var cwd: String?
         var originator: String?
     }
@@ -194,6 +212,7 @@ public enum CodexSessions {
         else { return Meta() }
 
         return Meta(
+            sessionId: payload["session_id"] as? String,
             cwd: payload["cwd"] as? String,
             originator: payload["originator"] as? String)
     }

@@ -187,7 +187,7 @@ enum Diagnostics {
                 session.isWorking(within: 45)
                 ? (session.isRunningTool ? "runningTool" : "working") : "idle"
             print(
-                "  \(session.id.prefix(8))  \(session.originator ?? "Codex")  "
+                "  \(session.id.prefix(13))  \(session.originator ?? "Codex")  "
                     + "\(project ?? "?")  [\(state)]  “\(session.title ?? "—")”")
             if !session.detail.isEmpty { print("      \(session.detail)") }
             print("      last written \(age)s ago")

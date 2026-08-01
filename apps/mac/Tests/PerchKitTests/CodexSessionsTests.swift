@@ -280,3 +280,47 @@ struct CodexToolSummaryTests {
         #expect(CodexSessions.toolSummary(name: "read_file", input: "") == "read_file")
     }
 }
+
+@Suite("Codex rollouts that share a session")
+struct CodexSharedSessionTests {
+
+    /// One `codex exec` run wrote two files a second apart — a short one and the 475 KB
+    /// where the work happened — with different uuids in their names and the same
+    /// `session_id` inside. Keyed on the filename that is two cards for one run.
+    @Test func twoRolloutsOfOneSessionAreOneCard() throws {
+        let fixture = try Fixture()
+        defer { fixture.destroy() }
+        let now = Date()
+        let shared = "019fbd0e-2d6c-76f3-a11e-9d2de8df9260"
+
+        try fixture.rollout(
+            id: shared, day: now,
+            lines: [Line.meta(id: shared), Line.agentMessage("the short one")],
+            modified: now.addingTimeInterval(-240))
+        try fixture.rollout(
+            id: "019fbd0e-2e52-7df1-a6c4-233864913ffd", day: now,
+            lines: [Line.meta(id: shared), Line.toolCall(input: "npm run build")],
+            modified: now.addingTimeInterval(-2))
+
+        let live = CodexSessions.live(
+            root: fixture.root, index: fixture.index, now: now, activeWithin: 1800)
+
+        #expect(live.count == 1)
+        // The newest wins, so the card shows the file the work is actually in.
+        #expect(live.first?.id == shared)
+        #expect(live.first?.detail == "exec: npm run build")
+    }
+
+    /// The filename is the fallback, so a header nobody can read still leaves a card.
+    @Test func aRolloutWithNoReadableHeaderFallsBackToItsFilename() throws {
+        let fixture = try Fixture()
+        defer { fixture.destroy() }
+        let now = Date()
+        try fixture.rollout(id: sessionB, day: now, lines: ["{broken"], modified: now)
+
+        #expect(
+            CodexSessions.live(
+                root: fixture.root, index: fixture.index, now: now, activeWithin: 1800
+            ).first?.id == sessionB)
+    }
+}
