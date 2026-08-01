@@ -107,4 +107,21 @@ rm -rf "$leak_dir"
   fail "five renders left $((after - before)) stdin captures behind in TMPDIR"
 ok "five renders, nothing left behind in TMPDIR"
 
+# The trap closes the ordinary exits; it cannot close SIGKILL, and the window between
+# capturing stdin and unlinking it is a few milliseconds wide. So a render also sweeps up
+# after dead ones, and that is the half worth testing: the first half is a trap, the second
+# is a decision about somebody else's file.
+sweep_dir="$(mktemp -d)"
+# A pid that cannot be alive — the file names its owner, and this one has no owner.
+: >"$sweep_dir/perch-statusline-stdin.999999"
+# And one belonging to a process that is very much alive, which must survive.
+: >"$sweep_dir/perch-statusline-stdin.$$"
+TMPDIR="$sweep_dir" PERCH_HOME="$HOME_DIR" "$HOME_DIR/bin/perch-statusline" <"$PAYLOAD" >/dev/null
+[ ! -f "$sweep_dir/perch-statusline-stdin.999999" ] ||
+  fail "a render left a dead one's stdin capture in place"
+[ -f "$sweep_dir/perch-statusline-stdin.$$" ] ||
+  fail "a render deleted a live process's stdin capture"
+rm -rf "$sweep_dir"
+ok "a render sweeps up after a killed one, and leaves a live one alone"
+
 ok "statusline bridge is within budget and behaves"

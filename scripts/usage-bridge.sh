@@ -136,6 +136,25 @@ STDIN_FILE="${TMPDIR:-/tmp}/perch-statusline-stdin.$$"
 cleanup() { rm -f "$STDIN_FILE"; }
 trap cleanup EXIT HUP INT TERM
 
+# A render killed between capturing stdin and handing it over leaves its file behind:
+# SIGKILL runs no trap, and that window is a few milliseconds wide. Rare — but rare and
+# unbounded is still unbounded, and two of them turned up within half an hour of the
+# systematic leak being fixed. So every render takes away what a dead one left.
+#
+# Builtins only, so this costs nothing on the overwhelming majority of renders where there
+# is nothing to find: the glob and `kill -0` are the shell's own, and `rm` runs only when a
+# file has outlived the process that named itself in it. A recycled pid keeps a file one
+# round longer, which is not a leak.
+for _stale in "${TMPDIR:-/tmp}"/perch-statusline-stdin.*; do
+  [ -e "$_stale" ] || continue
+  _owner="${_stale##*.}"
+  case "$_owner" in
+    "" | *[!0-9]*) continue ;;
+  esac
+  [ "$_owner" = "$$" ] && continue
+  kill -0 "$_owner" 2>/dev/null || rm -f "$_stale"
+done
+
 cat >"$STDIN_FILE"
 
 # Caching must never be able to break the statusline: everything here is best-effort.
