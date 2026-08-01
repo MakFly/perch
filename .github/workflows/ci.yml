@@ -1,0 +1,51 @@
+# What runs on every push, as opposed to what runs on a tag.
+#
+# `dmg.yml` builds the thing people download, and it is deliberately expensive: a universal
+# release build and a packaged disk image, on a tag. Which left ordinary commits with no CI
+# at all — `swift test` was only ever run by whoever happened to run it, and a red test
+# reached `main` without anything saying so.
+#
+# So this is the cheap half: the tests, and the one budget that a comment cannot keep.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+    tags-ignore: ["v*"] # a tag already gets the full DMG build, tests included
+  pull_request:
+  workflow_dispatch:
+
+# A push that supersedes another one makes the first irrelevant, and macOS runner minutes
+# are the most expensive kind.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # The same toolchain the app is developed against, and the same one dmg.yml pins.
+    runs-on: macos-26
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Select Xcode
+        run: |
+          # Newest first: the image ships more than one, and the default is not always it.
+          for candidate in /Applications/Xcode_26*.app /Applications/Xcode.app; do
+            [ -d "$candidate" ] || continue
+            sudo xcode-select -s "$candidate"
+            break
+          done
+          swift --version
+
+      - name: Test
+        run: swift test
+        working-directory: apps/mac
+
+      # The statusline bridge runs on Claude Code's schedule rather than on ours — every
+      # render, of every open session — so the number of processes it starts is a property
+      # worth failing a build over. It reached thirteen a render, five of them jq, before
+      # anyone counted. This counts.
+      - name: Statusline bridge stays cheap
+        run: ./scripts/statusline-budget.sh

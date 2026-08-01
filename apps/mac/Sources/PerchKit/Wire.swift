@@ -32,7 +32,13 @@ public struct ClaudeHookPayload: Codable, Sendable {
     public var hookEventName: String?
     public var toolName: String?
     public var toolInput: JSONValue?
-    public var toolResponse: JSONValue?
+    /// `tool_response` is deliberately absent.
+    ///
+    /// It was modelled here, decoded into a tree, carried across the socket and decoded
+    /// again by the app — and never read by anything. On a `PostToolUse` it holds whatever
+    /// the tool produced: the whole of a file that was read, the whole of a command's
+    /// output. Naming it in `CodingKeys` is what made every one of those a JSON tree built
+    /// twice per tool call, in a process the agent is waiting on.
     public var message: String?
     public var prompt: String?
     /// How the session is answering permission prompts: `default`, `acceptEdits`,
@@ -48,7 +54,6 @@ public struct ClaudeHookPayload: Codable, Sendable {
         case hookEventName = "hook_event_name"
         case toolName = "tool_name"
         case toolInput = "tool_input"
-        case toolResponse = "tool_response"
         case message
         case prompt
         case permissionMode = "permission_mode"

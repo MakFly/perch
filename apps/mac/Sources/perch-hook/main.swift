@@ -57,10 +57,19 @@ let input = readStdin()
 // Decode leniently: an unparseable payload is still worth forwarding as an event.
 let decoder = JSONDecoder()
 let payload = (try? decoder.decode(ClaudeHookPayload.self, from: input)) ?? ClaudeHookPayload()
-let raw = try? decoder.decode(JSONValue.self, from: input)
 
 // The payload's own event name wins — argv is only a fallback.
 let event = payload.hookEventName ?? eventArgument
+
+/// Events for which the untyped copy of the payload is worth building.
+///
+/// `raw` exists for one reader: `subagentLabel`, which hunts for whichever key the CLI
+/// used to name a subagent because the spelling has moved between releases. That is a
+/// question only the subagent events ask. Building it for every event meant re-decoding
+/// the whole payload a second time — including a `PostToolUse` carrying a file's entire
+/// contents — to answer a question nobody asked, in a process holding a blocked session.
+let rawEvents: Set<String> = ["SubagentStart", "SubagentStop"]
+let raw = rawEvents.contains(event) ? try? decoder.decode(JSONValue.self, from: input) : nil
 let wantsDecision = decisionEvents.contains(event)
 // A day for decisions, matching the hook entry the installer writes: the app owns the
 // deadline. Telemetry events get two seconds and are never worth stalling a session for.

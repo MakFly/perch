@@ -168,7 +168,7 @@ final class AppModel {
     private func refreshTranscripts() async {
         let paths = activity.transcriptPaths
         guard !paths.isEmpty else { return }
-        let turns = await TranscriptWatcher.read(paths: paths)
+        let turns = await transcripts.read(paths: paths)
         guard !turns.isEmpty else { return }
         activity.applyTurns(turns)
     }

@@ -34,6 +34,10 @@ command -v jq >/dev/null 2>&1 || fail "jq is required"
 SETTINGS="$HOME/.claude/settings.json"
 BRIDGE="$PERCH_HOME/bin/perch-statusline"
 ORIGINAL="$PERCH_HOME/statusline-original.json"
+# The same command, as one line of text. The shim runs on every render, and starting jq
+# just to read one string out of the file above was a process per render for a value that
+# changes only when the bridge is installed.
+ORIGINAL_COMMAND="$PERCH_HOME/statusline-original-command"
 CACHE="$PERCH_HOME/cache/rate-limits.json"
 
 current_command() {
@@ -78,7 +82,10 @@ remove() {
 
   jq empty "$SETTINGS.tmp" 2>/dev/null || fail "produced invalid JSON — original left untouched"
   mv "$SETTINGS.tmp" "$SETTINGS"
-  rm -f "$BRIDGE" "$ORIGINAL"
+  rm -f "$BRIDGE" "$ORIGINAL" "$ORIGINAL_COMMAND"
+  # Renders before this one leaked their stdin into TMPDIR, one file each. Nothing else
+  # will ever collect them.
+  rm -f "${TMPDIR:-/tmp}"/perch-statusline-stdin.* 2>/dev/null || true
   ok "bridge removed, original statusLine restored"
   info "backup at $backup"
 }
@@ -101,15 +108,28 @@ install() {
     jq '.statusLine // {}' "$SETTINGS" >"$ORIGINAL"
   fi
 
+  # The command on its own line, so the shim does not have to start jq to learn what to
+  # run. Written from `$ORIGINAL` rather than from the settings, so a re-run that skipped
+  # the block above still refreshes it — and so the two files can never disagree.
+  jq -r '.command // empty' "$ORIGINAL" >"$ORIGINAL_COMMAND"
+
   cat >"$BRIDGE" <<'BRIDGE_SCRIPT'
 #!/bin/sh
 # Perch statusline bridge (managed — remove with scripts/usage-bridge.sh --remove).
 #
 # Reads Claude Code's stdin once, caches `rate_limits`, then replays the identical bytes
 # to the original statusline command so its output is byte-for-byte what it was.
+#
+# This runs on every render of every session, so it is written to start as few processes as
+# it can. It used to start thirteen — five of them jq — which on a machine with a few
+# sessions open was the single largest thing Perch did to the CPU: measured at 42.7ms of
+# pure overhead per render, in front of a statusline that had its own work to do. Everything
+# jq is asked here is now asked once, in one program, and the rest is shell builtins.
 PERCH_HOME="${PERCH_HOME:-$HOME/.perch}"
-CACHE="$PERCH_HOME/cache/rate-limits.json"
-SESSIONS="$PERCH_HOME/cache/rate-limits"
+CACHE_DIR="$PERCH_HOME/cache"
+CACHE="$CACHE_DIR/rate-limits.json"
+SESSIONS="$CACHE_DIR/rate-limits"
+ORIGINAL_COMMAND="$PERCH_HOME/statusline-original-command"
 ORIGINAL="$PERCH_HOME/statusline-original.json"
 STDIN_FILE="${TMPDIR:-/tmp}/perch-statusline-stdin.$$"
 
@@ -119,67 +139,108 @@ trap cleanup EXIT HUP INT TERM
 cat >"$STDIN_FILE"
 
 # Caching must never be able to break the statusline: everything here is best-effort.
+#
+# One jq for the whole job. It answers three questions at once — which session this is,
+# what to write for it, and whether the shared cache may be overwritten — and prints the
+# answers on three lines. Asking them separately is what made this the expensive part.
 if command -v jq >/dev/null 2>&1; then
-  _limits=$(jq -c '{rate_limits, rate_limits_available}' <"$STDIN_FILE" 2>/dev/null)
-  if [ -n "$_limits" ] && [ "$_limits" != "null" ]; then
+  # `--slurpfile` on a file that is not there is an error, and this must never be one.
+  if [ -f "$CACHE" ]; then
+    set -- --slurpfile cached "$CACHE"
+  else
+    set -- --argjson cached '[]'
+  fi
+
+  _answers=$(jq -r "$@" '
+    def stamps: [ (.rate_limits // {}) | .. | objects | .resets_at? | select(. != null)
+                  | if type == "number" then . else (fromdateiso8601? // 0) end ];
+    def freshness: (stamps | max) // 0;
+
+    . as $in
+    | ($in | {rate_limits, rate_limits_available}) as $limits
+    | ($cached[0] // null) as $old
+    # The session id comes from the payload; anything that is not a plain identifier is
+    # dropped rather than turned into a path.
+    | (($in.session_id // "") | tostring | gsub("[^A-Za-z0-9._-]"; "")) as $session
+    # Only ever write forward. A render carries no timestamp of its own, but every window
+    # carries the instant it resets, and that instant moves with the window — so the latest
+    # `resets_at` in a payload dates the observation well enough to tell an idle session s
+    # old snapshot from a current one. It cannot tell two snapshots of the *same* window
+    # apart, which is what the per-session files are for. A cache whose every window has
+    # already reset is spent, and anything beats it — without that, one stale file could
+    # block every later write for ever.
+    | (if $old == null then true
+       else (($limits | freshness) >= ($old | freshness)) or (($old | freshness) <= now)
+       end) as $write
+    | $session,
+      ($in | {rate_limits, rate_limits_available, session_id, cwd} | tojson),
+      (if $write then ($limits | tojson) else "" end)
+  ' <"$STDIN_FILE" 2>/dev/null) || _answers=""
+
+  # jq failed, or the payload was not JSON: nothing is cached and the statusline still runs.
+  if [ -n "$_answers" ]; then
+    IFS='
+'
+    # A here-document is a builtin redirection, so reading the three lines back costs no
+    # process. Set explicitly rather than left to `read -r`, because a session id is one
+    # field and the two JSON documents must survive their own spaces.
+    { read -r _session
+      read -r _mine_json
+      read -r _cache_json
+    } <<ANSWERS
+$_answers
+ANSWERS
+    unset IFS
+
     # One file per session, which that session alone ever writes. Three sessions open means
     # three numbers arriving every ten seconds — the busy one's, and two frozen at whatever
     # their last API response carried — and a single file would show whichever landed last.
-    # The session id comes from the payload; anything that is not a plain identifier is
-    # dropped rather than turned into a path.
-    _session=$(jq -r '.session_id // empty' <"$STDIN_FILE" 2>/dev/null | tr -cd 'A-Za-z0-9._-')
-    if [ -n "$_session" ]; then
-      _dir="$PERCH_HOME/cache/rate-limits"
-      mkdir -p "$_dir" 2>/dev/null
-      _mine="$_dir/$_session.json"
+    if [ -n "$_session" ] && [ -n "$_mine_json" ]; then
+      # Tested rather than made: after the first render these exist, and `mkdir -p` on a
+      # directory that is already there is still a process.
+      [ -d "$SESSIONS" ] || mkdir -p "$SESSIONS" 2>/dev/null
+      _mine="$SESSIONS/$_session.json"
       _minetmp="$_mine.$$.tmp"
-      jq -c '{rate_limits, rate_limits_available, session_id, cwd}' <"$STDIN_FILE" \
-        >"$_minetmp" 2>/dev/null && mv "$_minetmp" "$_mine" 2>/dev/null
-      rm -f "$_minetmp" 2>/dev/null
+      # Write then move, so a reader never sees half a file — under a name of our own, so
+      # two sessions rendering at the same moment cannot share one temporary. The `rm` is
+      # on the failure path only: a successful `mv` has already taken the temporary away.
+      if printf '%s\n' "$_mine_json" >"$_minetmp" 2>/dev/null; then
+        mv "$_minetmp" "$_mine" 2>/dev/null || rm -f "$_minetmp" 2>/dev/null
+      fi
     fi
 
     # The single file stays, for a Perch that predates the directory above: it would find
     # nothing to read and show "not connected" on a machine whose quota is right there.
-    #
-    # Only ever write forward. A render carries no timestamp of its own, but every window
-    # carries the instant it resets, and that instant moves with the window — so the latest
-    # `resets_at` in a payload dates the observation well enough to tell an idle session's
-    # old snapshot from a current one. It cannot tell two snapshots of the *same* window
-    # apart, which is what the per-session files above are for. Nothing to compare against,
-    # or jq choking on a corrupt cache: write, which is what this did before the comparison
-    # existed.
-    _write=1
-    if [ -f "$CACHE" ]; then
-      _write=$(printf '%s' "$_limits" | jq --slurpfile cached "$CACHE" --argjson now "$(date +%s)" '
-        def stamps: [ (.rate_limits // {}) | .. | objects | .resets_at? | select(. != null)
-                      | if type == "number" then . else (fromdateiso8601? // 0) end ];
-        def freshness: (stamps | max) // 0;
-        # A cache whose every window has already reset is spent, and anything beats it —
-        # without that, one stale file could block every later write for ever.
-        if (freshness >= ($cached[0] | freshness)) or (($cached[0] | freshness) <= $now)
-        then 1 else 0 end' 2>/dev/null) || _write=1
-      [ -n "$_write" ] || _write=1
-    fi
-    if [ "$_write" != "0" ]; then
-      mkdir -p "$(dirname "$CACHE")" 2>/dev/null
-      # Write then move, so a reader never sees half a file — under a name of our own, so
-      # two sessions rendering at the same moment cannot share one temporary.
+    if [ -n "$_cache_json" ]; then
+      [ -d "$CACHE_DIR" ] || mkdir -p "$CACHE_DIR" 2>/dev/null
       _tmp="$CACHE.$$.tmp"
-      printf '%s\n' "$_limits" >"$_tmp" 2>/dev/null && mv "$_tmp" "$CACHE" 2>/dev/null
-      rm -f "$_tmp" 2>/dev/null
+      if printf '%s\n' "$_cache_json" >"$_tmp" 2>/dev/null; then
+        mv "$_tmp" "$CACHE" 2>/dev/null || rm -f "$_tmp" 2>/dev/null
+      fi
     fi
   fi
 fi
 
+# One line of text, written by the installer, so this costs a builtin instead of a jq.
+# Falling back to the JSON keeps a bridge installed by an older version working until the
+# next `usage-bridge.sh` run rewrites both.
 _command=""
-if [ -f "$ORIGINAL" ] && command -v jq >/dev/null 2>&1; then
+if [ -f "$ORIGINAL_COMMAND" ]; then
+  IFS= read -r _command <"$ORIGINAL_COMMAND" || _command=""
+elif [ -f "$ORIGINAL" ] && command -v jq >/dev/null 2>&1; then
   _command=$(jq -r '.command // empty' "$ORIGINAL" 2>/dev/null)
 fi
 
 # No original statusline: the user had none, so print nothing and keep it that way.
 [ -n "$_command" ] || exit 0
 
-exec /bin/sh -c "$_command" <"$STDIN_FILE"
+# `exec` replaces this shell, and a replaced shell runs no EXIT trap — so the temporary
+# stayed behind, one per render, for ever. Measured at 479 files in TMPDIR on the machine
+# this was found on. Opening it first and unlinking it second hands the original its bytes
+# through a file descriptor that outlives the name.
+exec 3<"$STDIN_FILE"
+rm -f "$STDIN_FILE"
+exec /bin/sh -c "$_command" <&3
 BRIDGE_SCRIPT
   chmod +x "$BRIDGE"
 

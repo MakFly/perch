@@ -58,12 +58,18 @@ public struct UsageIndexer {
         self.init(store: store, roots: [(root, source)], opencodeDatabase: nil)
     }
 
+    /// Every transcript under the roots, with its size already read.
+    ///
+    /// `fileSizeKey` is asked for here rather than fetched per file later: the enumerator
+    /// gets its attributes in batches from the directory walk it is already doing, so the
+    /// size arrives free and `resourceValues` below reads it back without a syscall. Asking
+    /// each file separately was four thousand `stat` calls per pass.
     public func transcriptURLs() -> [(url: URL, source: Source)] {
         roots.flatMap { root in
             guard
                 let enumerator = FileManager.default.enumerator(
                     at: root.url,
-                    includingPropertiesForKeys: [.isRegularFileKey],
+                    includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
                     options: [.skipsHiddenFiles])
             else { return [(url: URL, source: Source)]() }
 
@@ -75,11 +81,35 @@ public struct UsageIndexer {
     }
 
     /// Indexes every transcript that has grown since the last run, then opencode's store.
+    ///
+    /// A pass is dominated by the files that have *not* moved. A machine that has been used
+    /// for a while has thousands of finished transcripts and one or two live ones, and this
+    /// runs every ten seconds while an agent works — so the cheap answer for "nothing to do
+    /// here" is the one that decides what the pass costs. It is now a dictionary lookup and
+    /// a size comparison, against one query for the whole cursor table; it used to be a
+    /// `stat` and a prepared statement per file.
+    ///
+    /// A file whose size is exactly where the cursor stopped is taken as unchanged. That
+    /// gives up one case the per-file `stat` used to catch: a transcript replaced by a
+    /// different file of byte-identical length, which would keep the stale offset instead of
+    /// being re-read from zero. These files are append-only JSONL written by the agents
+    /// themselves, so the case does not arise, and paying four thousand syscalls every ten
+    /// seconds to rule it out is the wrong trade.
     @discardableResult
     public func indexAll(onProgress: ((Progress) -> Void)? = nil) throws -> Progress {
         var progress = Progress()
+        let cursors = store.allCursors()
         for (url, source) in transcriptURLs() {
-            let result = try index(url, source: source)
+            if let cursor = cursors[url.path],
+                let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize,
+                size == cursor.offset
+            {
+                progress.filesScanned += 1
+                onProgress?(progress)
+                continue
+            }
+
+            let result = try index(url, source: source, cursor: cursors[url.path])
             progress.filesScanned += 1
             progress.eventsInserted += result.inserted
             progress.bytesRead += result.bytesRead
@@ -125,13 +155,21 @@ public struct UsageIndexer {
     public func index(_ url: URL, source: Source = .claude) throws -> (
         inserted: Int, bytesRead: Int
     ) {
+        try index(url, source: source, cursor: store.cursor(forPath: url.path))
+    }
+
+    /// The same, for a caller that has already read the cursor table.
+    @discardableResult
+    func index(_ url: URL, source: Source, cursor storedCursor: UsageStore.Cursor?) throws -> (
+        inserted: Int, bytesRead: Int
+    ) {
         let path = url.path
         let attributes = try? FileManager.default.attributesOfItem(atPath: path)
         let inode = (attributes?[.systemFileNumber] as? Int) ?? 0
         let size = (attributes?[.size] as? Int) ?? 0
 
         var start = 0
-        if let cursor = store.cursor(forPath: path) {
+        if let cursor = storedCursor {
             // A different inode means the file was replaced; a smaller size means it was
             // truncated. Either way the stored offset is meaningless — start over.
             let sameFile = cursor.inode == inode && size >= cursor.offset

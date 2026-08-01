@@ -248,6 +248,23 @@ public final class UsageStore: @unchecked Sendable {
         return cursor
     }
 
+    /// Every cursor at once, for a pass that is about to ask for all of them.
+    ///
+    /// The indexer walks the whole transcript tree on each pass and asked this table one
+    /// path at a time — a prepare, a step and a finalize per file. On a machine with four
+    /// thousand transcripts that is four thousand statements to discover that nothing has
+    /// changed, every ten seconds. The table is one row per file and a few hundred
+    /// kilobytes at its largest, so reading it whole is cheaper than looking anything up
+    /// in it.
+    func allCursors() -> [String: Cursor] {
+        var cursors: [String: Cursor] = [:]
+        try? database.query("SELECT path, offset, inode FROM file_cursor") { row in
+            guard let path = row.string(0) else { return }
+            cursors[path] = Cursor(offset: row.int(1), inode: row.int(2))
+        }
+        return cursors
+    }
+
     func setCursor(_ cursor: Cursor, forPath path: String) throws {
         let statement = try database.prepare(
             """

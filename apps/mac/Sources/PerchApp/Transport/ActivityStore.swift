@@ -122,9 +122,7 @@ final class ActivityStore {
                 agent: request.agent,
                 // Read from the transcript the payload points at — Claude Code names its
                 // own sessions, so there is nothing here for Perch to invent.
-                aiTitle: request.payload.transcriptPath.flatMap {
-                    SessionTitle.read(transcriptPath: $0)
-                },
+                aiTitle: titleIfWorthReading(for: request, kind: event.kind),
                 // Recorded, not read: the reading is what `TranscriptWatcher` does, off
                 // this path, because this one has a blocked CLI waiting at the end of it.
                 transcriptPath: request.payload.transcriptPath,
@@ -136,6 +134,36 @@ final class ActivityStore {
                 subagentLabel: request.subagentLabel,
                 at: event.date)
         }
+    }
+
+    /// The events after which a session's own name can have changed.
+    ///
+    /// Claude Code writes the title early in a turn and refines it as the turn goes, so
+    /// these three see every version of it that a card ever shows.
+    private static let titleKinds: Set<String> = ["SessionStart", "UserPromptSubmit", "Stop"]
+
+    /// The session's name, read from its transcript — but only when there is a reason to
+    /// look.
+    ///
+    /// This sits on the hook path, which means the main actor with a CLI blocked at the end
+    /// of it, and the read is not small: a 256 KB window off the end of the file, every line
+    /// in it parsed as JSON, backwards, and when the window holds no title — which is the
+    /// common case on a long session — every line parsed before it can say so. Measured at
+    /// 3.6ms against a 5 MB transcript, and it ran on all fourteen events, which is twice
+    /// per tool call.
+    ///
+    /// Nil keeps whatever the session already has: `SessionTracker.record` only replaces a
+    /// title when it is handed a non-empty one, so saying nothing here is not the same as
+    /// clearing it.
+    private func titleIfWorthReading(for request: PerchRequest, kind: String) -> String? {
+        guard let path = request.payload.transcriptPath, !path.isEmpty else { return nil }
+        // The first sighting reads too, whatever the event: a session that was already
+        // running when Perch started would otherwise sit unnamed on a card until its next
+        // prompt. Gating on the title being absent instead would re-read for ever on the
+        // sessions Claude Code never names, which is the same bug in the opposite corner.
+        let isNewToUs = request.payload.sessionId.map { tracker.sessions[$0] == nil } ?? false
+        guard isNewToUs || Self.titleKinds.contains(kind) else { return nil }
+        return SessionTitle.read(transcriptPath: path)
     }
 
     /// A session identified as background noise is dropped whole — including anything it

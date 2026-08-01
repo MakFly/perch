@@ -121,21 +121,40 @@ final class UsageModel {
                 do { return .success(try indexer.indexAll()) } catch { return .failure(error) }
             }.value
 
+            var hasNewRows = true
             switch result {
-            case .success:
+            case .success(let progress):
                 indexError = nil
                 lastIndexedAt = .now
+                hasNewRows = progress.eventsInserted > 0
                 // A price list that has just learned a model does not retroactively price
-                // what was indexed before it — unless it is asked to. Cheap and idempotent:
-                // it only ever touches rows still sitting at zero.
-                try? store?.repriceUnpriced()
+                // what was indexed before it — unless it is asked to. Idempotent, but not
+                // free: the predicate is `cost = 0`, which no index covers, so it is a scan
+                // of the whole table. Only worth paying for when the table has just grown.
+                if hasNewRows { _ = try? store?.repriceUnpriced() }
             case .failure(let error):
                 indexError = "\(error)"
             }
             isIndexing = false
-            reload()
+
+            // The aggregates are five queries over every row ever indexed, one of them
+            // grouping the whole history through `strftime`. A pass that inserted nothing
+            // cannot have changed any of their answers, and under a working agent this runs
+            // every ten seconds — so it used to re-derive the same numbers all day. The
+            // quota is re-read either way: it moves whether or not this machine spent it.
+            if hasNewRows || !hasLoadedAggregates {
+                hasLoadedAggregates = true
+                reload()
+            } else {
+                reloadLimits()
+            }
         }
     }
+
+    /// Whether the tiles have ever been filled. The first pass on a fresh launch inserts
+    /// nothing on a machine that is already indexed, and skipping it would open the panel
+    /// onto zeroes.
+    @ObservationIgnored private var hasLoadedAggregates = false
 
     /// How long the coalescing may hold out before it has to let a refresh through.
     ///
