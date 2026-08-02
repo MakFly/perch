@@ -31,6 +31,27 @@ struct SessionCardView: View {
 
     private var plan: JumpPlan { TerminalJump.plan(for: session.client) }
 
+    /// Whether opening this card would show anything that closing it does not.
+    ///
+    /// Often it would not: a session with no turn read yet, no prompt, no subagents and no
+    /// plan has nothing under its headline, and in `clean` layout no card has anything at
+    /// all. Clicking one of those toggled a disclosure arrow over an unchanged row, which
+    /// reads as a card that is broken rather than as a card that is empty.
+    private var hasDetail: Bool {
+        if layout.showsPrompt, session.turn?.isEmpty == false { return true }
+        if layout.showsPrompt, session.prompt?.isEmpty == false { return true }
+        if layout.showsTasks, !session.children.isEmpty { return true }
+        if layout.showsTasks, !tasks.isEmpty { return true }
+        return false
+    }
+
+    /// A click with nothing to open goes where the work is instead.
+    ///
+    /// Only when the jump can actually happen — a session whose terminal was never recorded
+    /// keeps the toggle, because falling through to nothing at all is the behaviour this
+    /// replaces.
+    private var tapJumps: Bool { !hasDetail && plan.isPossible }
+
     /// Each agent keeps its own colour, so two of them in the same project stay apart.
     private var agentTint: Color {
         switch session.agent {
@@ -52,8 +73,8 @@ struct SessionCardView: View {
             // you want far more often, which is to see what this session is actually doing.
             // The chip has carried the ↗ since it became clickable, so the affordance was
             // already pointing at the right place.
-            .onTapGesture { onToggle?() }
-            .help(isOpen ? t("Close") : t("Open"))
+            .onTapGesture { tapJumps ? onJump?() : onToggle?() }
+            .help(tapJumps ? plan.summary : (isOpen ? t("Close") : t("Open")))
             // Silencing from the card itself is the only entry point that costs nothing:
             // the session you want gone is the one you are already looking at.
             .contextMenu {
@@ -230,11 +251,13 @@ struct SessionCardView: View {
 
             StatusDot(status: session.status)
 
-            // Which way this row goes when you click it.
-            Image(systemName: "chevron.down")
+            // Which way this row goes when you click it — and a row with nothing to open
+            // does not go down, it goes out. A chevron on a card that cannot expand is the
+            // affordance promising the thing that was broken.
+            Image(systemName: tapJumps ? "arrow.up.forward" : "chevron.down")
                 .font(.system(size: 7, weight: .bold))
                 .foregroundStyle(isHovered ? Theme.secondary : Theme.tertiary)
-                .rotationEffect(.degrees(isOpen ? 0 : -90))
+                .rotationEffect(.degrees(tapJumps || isOpen ? 0 : -90))
                 .frame(width: 8)
         }
     }
