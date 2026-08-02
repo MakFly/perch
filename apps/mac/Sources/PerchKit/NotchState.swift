@@ -59,9 +59,14 @@ public enum NotchState: String, Equatable, Sendable, CaseIterable {
         case .expanded:
             return CGSize(width: 680, height: 440 + Self.bodyInset)
         case .alert:
-            return CGSize(width: 520, height: notch.height + Self.bodyInset + 148)
+            return CGSize(width: Self.alertWidth, height: notch.height + Self.bodyInset + 148)
         }
     }
+
+    /// The width a request is answered at before anything asks for more — see
+    /// `AppModel.extraWidth`. Named because the card that measures itself has to measure
+    /// against the same number the panel is drawn at.
+    public static let alertWidth: CGFloat = 520
 
     /// How far the inverse curve on each shoulder reaches *past* the panel's own edge.
     ///

@@ -462,11 +462,13 @@ final class AppModel {
         permissions.current.map { extraHeight(for: $0.kind) } ?? 0
     }
 
-    /// How much wider. Only a plan asks for it: a permission is one command and a question
-    /// is a list of short labels, and widening those would leave a card mostly empty.
+    /// How much wider. A permission is one command and stays at the panel's own width;
+    /// a plan and a question are both prose, and at 520pt every option description wrapped
+    /// three times — which is how four options become four paragraphs and nobody reads the
+    /// one they are picking.
     private func extraWidth(for kind: RequestKind) -> CGFloat {
-        if case .plan = kind { return 140 }
-        return 0
+        if case .permission = kind { return 0 }
+        return 140
     }
 
     private var alertExtraWidth: CGFloat {
@@ -476,11 +478,12 @@ final class AppModel {
     private func extraHeight(for kind: RequestKind) -> CGFloat {
         switch kind {
         case .question(let request):
-            // Room for the question, its options, the free-text field under them, and the
-            // controls. The field is 34pt of box plus the spacing above it — a card that
-            // scrolls to reach its own answer is a card nobody answers.
-            let options = request.questions.map(\.options.count).max() ?? 2
-            return CGFloat(options) * 44 + 40 + 43
+            // Measured from the text rather than counted in options — see `QuestionCard`.
+            // A flat height per option was only ever true because the card clipped every
+            // description to two lines, which meant the question you were answering was
+            // the one thing the card would not show you.
+            return QuestionCard.extraHeight(
+                for: request, width: NotchState.alertWidth + extraWidth(for: kind))
         case .plan:
             // A plan gets the screen. It is the longest thing Perch shows, the one with
             // the most consequence behind the button, and it was being read through a

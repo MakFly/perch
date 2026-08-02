@@ -30,13 +30,27 @@ struct QuestionCardView: View {
         VStack(alignment: .leading, spacing: 9) {
             header
             if let question {
-                Text(question.question)
-                    .font(Theme.label(12, .semibold))
-                    .foregroundStyle(Theme.primary)
-                    .fixedSize(horizontal: false, vertical: true)
+                // The question, its options and the answer field scroll together; the
+                // header and the controls do not. The panel is sized to fit this whole
+                // body — see `QuestionCard` — so the scroll is the overflow case rather
+                // than the normal one, and when it does happen the buttons are still
+                // where they were. A card that has to be scrolled to reach its own
+                // Submit is a card nobody submits.
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 9) {
+                        Text(question.question)
+                            .font(Theme.label(12, .semibold))
+                            .foregroundStyle(Theme.primary)
+                            .fixedSize(horizontal: false, vertical: true)
 
-                options(for: question)
-                otherField(for: question)
+                        options(for: question)
+                        otherField(for: question)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.trailing, 4)
+                }
+                .frame(maxHeight: QuestionCard.maxBodyHeight)
+                .scrollIndicators(.automatic)
             }
             controls
         }
@@ -192,10 +206,13 @@ private struct OptionRow: View {
                         .font(Theme.label(11, .medium))
                         .foregroundStyle(Theme.primary)
                     if !option.description.isEmpty {
+                        // Unclipped. Two lines was enough for a label and never enough for
+                        // a reason, and the reason is what the option is being chosen on —
+                        // an ellipsis here sends you to the terminal to read the question
+                        // this card exists to answer.
                         Text(option.description)
                             .font(Theme.mono(9))
                             .foregroundStyle(Theme.secondary)
-                            .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }

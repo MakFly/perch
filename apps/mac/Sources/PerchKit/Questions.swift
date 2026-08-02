@@ -113,6 +113,81 @@ public struct AskUserQuestionRequest: Sendable, Equatable {
     }
 }
 
+/// How tall the question card wants to be, so the panel can be that tall before it draws.
+///
+/// The panel is sized from the request rather than from the laid-out view — the window is a
+/// fixed canvas and only the panel inside it animates, so its size has to be known one step
+/// ahead of SwiftUI. That used to be a flat 44pt per option, which is a description of
+/// exactly two lines: anything longer was clipped to two by the view, and the number stayed
+/// true by making the card lie. It no longer clips, so the number has to measure.
+///
+/// The measurement is an estimate — characters against an average glyph width — and it is
+/// meant to be. The body scrolls past `maxBodyHeight` and a few points either way cost a
+/// little air at the bottom of the card, not a lost button.
+public enum QuestionCard {
+    /// The tallest the scrollable body may get, in points.
+    ///
+    /// Shared with the view so the two cannot drift: the panel is sized against this and
+    /// the `ScrollView` is capped at it, and if they disagreed the card would either scroll
+    /// inside a panel with room to spare or run past one without.
+    public static let maxBodyHeight: CGFloat = 400
+
+    /// Header and controls: the two rows that sit outside the scrolling body, plus the
+    /// spacing between them. Held apart from the body so a scrolling card still reserves
+    /// room for its own buttons.
+    private static let chrome: CGFloat = 83
+
+    /// Free-text field: 34pt of box plus the spacing above it.
+    private static let otherField: CGFloat = 43
+
+    /// Rough width of one character, per font size. Departure Mono is what the card draws
+    /// in and it is monospaced at roughly 0.6em; the labels are proportional and narrower
+    /// per character, which the same factor over-estimates in the safe direction.
+    private static func lines(_ text: String, size: CGFloat, width: CGFloat) -> CGFloat {
+        guard !text.isEmpty else { return 0 }
+        let perCharacter = size * 0.6
+        let perLine = max(1, (width / perCharacter).rounded(.down))
+        // Explicit newlines survive wrapping — a description written as two sentences on
+        // two lines is two paragraphs, not one long one.
+        return text.split(separator: "\n", omittingEmptySubsequences: false)
+            .reduce(0) { $0 + max(1, (CGFloat($1.count) / perLine).rounded(.up)) }
+    }
+
+    /// What the body of the tallest question in the request measures at `width`.
+    ///
+    /// The tallest rather than the sum: the card shows one question at a time, and the
+    /// panel must not resize between "3 of 4" and "4 of 4" — a card that jumps as you
+    /// answer it moves the buttons out from under the cursor.
+    public static func bodyHeight(for request: AskUserQuestionRequest, width: CGFloat) -> CGFloat {
+        // What is left for text once the card's padding and the option's own box are gone:
+        // 14pt of card padding either side, 8pt inside the row, and the radio button.
+        let textWidth = max(120, width - 28 - 16 - 17)
+
+        let tallest = request.questions.map { question -> CGFloat in
+            // The question itself, at label 12.
+            var height = lines(question.question, size: 12, width: width - 28) * 15
+
+            for option in question.options {
+                // Label at 11, description at mono 9, over 10pt of vertical padding and
+                // 4pt of gap to the next row.
+                height += 14
+                height += lines(option.description, size: 9, width: textWidth) * 12
+                height += 14
+            }
+            return height + otherField
+        }.max() ?? 0
+
+        return tallest
+    }
+
+    /// How much taller than a plain permission a question's panel has to be.
+    public static func extraHeight(for request: AskUserQuestionRequest, width: CGFloat)
+        -> CGFloat
+    {
+        min(bodyHeight(for: request, width: width), maxBodyHeight) + chrome
+    }
+}
+
 /// `ExitPlanMode`: approve the plan, or send back what to change.
 public struct PlanApprovalRequest: Sendable, Equatable {
     public var plan: String

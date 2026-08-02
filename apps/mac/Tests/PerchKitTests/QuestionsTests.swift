@@ -111,6 +111,83 @@ private let askInput = toolInput(
     #expect(answers["Which database?"] as? String == "Postgres")
 }
 
+// MARK: - Card height
+
+/// The panel is sized from the request, one step ahead of the view that draws it. It used
+/// to be a flat 44pt per option — a description of exactly two lines — and the view kept
+/// that true by clipping every longer one to two. It no longer clips, so the estimate has
+/// to answer to the text.
+@Suite("Card height")
+struct CardHeightTests {
+    private func request(
+        question: String = "Which database?",
+        descriptions: [String]
+    ) -> AskUserQuestionRequest {
+        AskUserQuestionRequest(questions: [
+            AskQuestion(
+                question: question,
+                header: "DB",
+                multiSelect: false,
+                options: descriptions.enumerated().map {
+                    .init(label: "Option \($0.offset)", description: $0.element)
+                })
+        ])
+    }
+
+    private let long = String(repeating: "a reason to pick this one. ", count: 8)
+
+    @Test("a long description is taller than a short one")
+    func longerTextIsTaller() {
+        let short = QuestionCard.bodyHeight(for: request(descriptions: ["Relational"]), width: 660)
+        let tall = QuestionCard.bodyHeight(for: request(descriptions: [long]), width: 660)
+        #expect(tall > short)
+    }
+
+    @Test("more options are taller")
+    func moreOptionsIsTaller() {
+        let two = QuestionCard.bodyHeight(for: request(descriptions: [long, long]), width: 660)
+        let four = QuestionCard.bodyHeight(
+            for: request(descriptions: [long, long, long, long]), width: 660)
+        #expect(four > two)
+    }
+
+    @Test("the same request is taller in a narrower card")
+    func narrowerWraps() {
+        let wide = QuestionCard.bodyHeight(for: request(descriptions: [long]), width: 660)
+        let narrow = QuestionCard.bodyHeight(for: request(descriptions: [long]), width: 380)
+        #expect(narrow > wide)
+    }
+
+    /// A question long enough to run past the panel scrolls instead of growing — the window
+    /// is a fixed canvas, and a card taller than it is a card with its buttons off screen.
+    @Test("the body is capped so the card stays inside the canvas")
+    func heightIsClamped() {
+        let huge = request(
+            descriptions: Array(repeating: String(repeating: "x", count: 4000), count: 4))
+        #expect(QuestionCard.bodyHeight(for: huge, width: 660) > QuestionCard.maxBodyHeight)
+        #expect(
+            QuestionCard.extraHeight(for: huge, width: 660)
+                <= QuestionCard.maxBodyHeight + 100)
+    }
+
+    /// The card shows one question at a time, so four of them are as tall as the tallest —
+    /// not as tall as all four. A panel that resized between "3 of 4" and "4 of 4" would
+    /// move the buttons out from under the cursor mid-answer.
+    @Test("several questions size to the tallest, not to their sum")
+    func sizesToTheTallestQuestion() {
+        let one = request(descriptions: [long, long])
+        let several = AskUserQuestionRequest(
+            questions: one.questions + [
+                AskQuestion(
+                    question: "And?", header: "B", multiSelect: false,
+                    options: [.init(label: "Yes", description: "")])
+            ])
+        #expect(
+            QuestionCard.bodyHeight(for: several, width: 660)
+                == QuestionCard.bodyHeight(for: one, width: 660))
+    }
+}
+
 // MARK: - Free-text answers
 
 /// Every `AskUserQuestion` implicitly offers "none of these" — Claude Code's own prompt
