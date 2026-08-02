@@ -233,6 +233,29 @@ public struct SessionTracker: Sendable {
         prune(now: date)
     }
 
+    /// The request this session was blocked on has been resolved.
+    ///
+    /// A session enters `needsApproval` or `waitingForAnswer` on a `PermissionRequest` and
+    /// used to leave it only on the *next* hook — which normally arrives, because answering
+    /// runs the tool. Normally. A question answered in the terminal, a request that expired,
+    /// a session interrupted at the prompt, Perch quitting: in all of those the decision is
+    /// resolved and no further event ever comes, so the card sat on "waiting for you"
+    /// permanently. The panel said a session was blocked when nothing was.
+    ///
+    /// So the resolution itself says so. `working` rather than `idle`, for the same reason
+    /// `PostToolUse` does: the answer went back to the model, and the model has the turn —
+    /// nothing has been handed to a person yet.
+    ///
+    /// Only lifts a wait. Anything else is a later event that already knows better than
+    /// this one — a decision resolving while the session has moved on must not drag it
+    /// backwards.
+    public mutating func answered(id: String, at date: Date = .now) {
+        guard var session = sessions[id], session.status.needsYou else { return }
+        session.status = .working
+        session.lastEvent = date
+        sessions[id] = session
+    }
+
     public mutating func record(
         id: String,
         kind: String,

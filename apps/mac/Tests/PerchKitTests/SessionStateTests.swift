@@ -98,6 +98,55 @@ private let epoch = Date(timeIntervalSince1970: 1_700_000_000)
     #expect(tracker.sessions["s2"]?.status == .waitingForAnswer)
 }
 
+/// A card said "waiting for you" until the *next* hook arrived — and for a request nobody
+/// answers through Perch, the next hook never does. Answering in the terminal, a request
+/// that expired, a session interrupted at the prompt: the decision was resolved, the panel
+/// went back to idle, and the row stayed amber for the rest of the session.
+@Suite("A resolved request releases its session")
+struct AnsweredTests {
+    @Test("answering ends the wait without waiting for another hook")
+    func answeringEndsTheWait() {
+        var tracker = SessionTracker()
+        tracker.record(id: "s1", kind: "PermissionRequest", tool: "AskUserQuestion", at: epoch)
+        #expect(tracker.sessions["s1"]?.status == .waitingForAnswer)
+
+        tracker.answered(id: "s1", at: epoch)
+        // `working`, not `idle`: the answer went back to the model, which now has the turn.
+        #expect(tracker.sessions["s1"]?.status == .working)
+    }
+
+    @Test("a plain approval is released the same way")
+    func approvalIsReleasedToo() {
+        var tracker = SessionTracker()
+        tracker.record(id: "s1", kind: "PermissionRequest", tool: "Bash", at: epoch)
+        #expect(tracker.sessions["s1"]?.status == .needsApproval)
+
+        tracker.answered(id: "s1", at: epoch)
+        #expect(tracker.sessions["s1"]?.status == .working)
+    }
+
+    /// A decision can resolve after the session has already moved on — the timeout fires a
+    /// day later, and quitting resolves everything at once. Neither may drag a card
+    /// backwards into a state its own hooks have left behind.
+    @Test("a session that has moved on is left alone")
+    func doesNotDragASessionBackwards() {
+        var tracker = SessionTracker()
+        tracker.record(id: "s1", kind: "PermissionRequest", tool: "Bash", at: epoch)
+        tracker.record(id: "s1", kind: "Stop", at: epoch)
+        #expect(tracker.sessions["s1"]?.status == .idle)
+
+        tracker.answered(id: "s1", at: epoch)
+        #expect(tracker.sessions["s1"]?.status == .idle)
+    }
+
+    @Test("a session Perch never saw is not invented")
+    func unknownSessionIsIgnored() {
+        var tracker = SessionTracker()
+        tracker.answered(id: "ghost", at: epoch)
+        #expect(tracker.sessions["ghost"] == nil)
+    }
+}
+
 /// Claude Code raises notifications for several reasons; only one of them means the turn
 /// has stopped on a person. The others must not knock the card off what it was showing.
 @Test func onlyTheWaitingNotificationChangesTheStatus() {

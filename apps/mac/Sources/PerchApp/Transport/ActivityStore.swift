@@ -141,6 +141,12 @@ final class ActivityStore {
         "Notification",
     ]
 
+    /// The request a session was blocked on has been resolved — by a click, a timeout, or
+    /// Perch quitting. See `SessionTracker.answered`.
+    func answered(sessionId: String) {
+        tracker.answered(id: sessionId)
+    }
+
     func record(_ request: PerchRequest) {
         let event = ActivityEvent(request: request)
 

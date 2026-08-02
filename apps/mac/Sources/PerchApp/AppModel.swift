@@ -51,6 +51,13 @@ final class AppModel {
 
     init(notch: NotchController) {
         self.notch = notch
+        // A session is drawn as blocked for as long as Perch holds its request. Every way
+        // out of that queue — answered, denied, timed out, quit — has to say so, or the
+        // card keeps claiming a session is waiting on you after nothing is.
+        permissions.onResolved = { [weak self] pending in
+            guard let self, let session = pending.sessionId else { return }
+            activity.answered(sessionId: session)
+        }
     }
 
     func updateQuiet(_ settings: QuietSettings) {

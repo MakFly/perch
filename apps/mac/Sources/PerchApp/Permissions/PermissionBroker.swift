@@ -12,6 +12,15 @@ final class PermissionBroker {
     /// Oldest first: whoever has been blocked longest gets answered first.
     private(set) var queue: [PendingPermission] = []
 
+    /// Called for every request that leaves the queue, however it leaves it.
+    ///
+    /// A card is not the only thing a pending request affects: the session it belongs to is
+    /// drawn as blocked for as long as Perch believes it is. Announcing the resolution here
+    /// rather than at each call site is the point — there are five ways out of this queue,
+    /// and the two that are easiest to forget are the two nobody clicks: the timeout, and
+    /// quitting.
+    var onResolved: ((PendingPermission) -> Void)?
+
     /// Slightly under the hook's own timeout, so Perch decides rather than letting the
     /// hook give up — otherwise the UI would still show a request nobody is waiting on.
     ///
@@ -63,7 +72,13 @@ final class PermissionBroker {
         pending.resolve(
             decision, reason: reason, rule: rule, updatedInput: updatedInput,
             planMode: planMode)
+        finish(pending)
+    }
+
+    /// Takes a resolved request out of the queue and says so. Every exit goes through here.
+    private func finish(_ pending: PendingPermission) {
         queue.removeAll { $0.id == pending.id }
+        onResolved?(pending)
     }
 
     func resolveCurrent(with decision: PermissionDecision) {
@@ -79,7 +94,7 @@ final class PermissionBroker {
             try? await Task.sleep(for: expiry)
             guard let self, !pending.isResolved else { return }
             pending.resolve(.ask, reason: "Perch timed out waiting for a decision")
-            self.queue.removeAll { $0.id == pending.id }
+            self.finish(pending)
         }
     }
 
@@ -93,14 +108,17 @@ final class PermissionBroker {
         queue.removeAll()
         for pending in waiting {
             pending.resolve(decision, reason: "Answered with the rest of the queue")
+            onResolved?(pending)
         }
     }
 
     /// On quit, unblock everything rather than leaving sessions stuck.
     func resolveAllPending() {
-        for pending in queue {
-            pending.resolve(.ask, reason: "Perch quit")
-        }
+        let waiting = queue
         queue.removeAll()
+        for pending in waiting {
+            pending.resolve(.ask, reason: "Perch quit")
+            onResolved?(pending)
+        }
     }
 }
