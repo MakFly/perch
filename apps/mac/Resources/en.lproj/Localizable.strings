@@ -107,6 +107,9 @@
 "Notch" = "Notch";
 "Reset to what macOS reports" = "Reset to what macOS reports";
 "Show the plan beside the cutout when nothing is running" = "Show the plan beside the cutout when nothing is running";
+"Startup" = "Startup";
+"Open Perch at login" = "Open Perch at login";
+"Perch has no Dock icon and no menu bar item, so an install that stopped running after a restart looks like one that works. macOS lists it under System Settings › General › Login Items." = "Perch has no Dock icon and no menu bar item, so an install that stopped running after a restart looks like one that works. macOS lists it under System Settings › General › Login Items.";
 "Idle sessions" = "Idle sessions";
 "Forget a silent session after" = "Forget a silent session after";
 "Never" = "Never";

@@ -138,6 +138,19 @@ import Testing
     #expect(decoded.betaUpdates)
 }
 
+/// Perch is invisible when it is not running — no Dock icon, no menu bar item — so coming
+/// back after a restart is the default, for a fresh install and for a settings file
+/// written before the setting existed alike.
+@Test func perchComesBackAfterARestartUnlessToldOtherwise() throws {
+    #expect(Preferences().launchAtLogin)
+
+    let old = Data(#"{"idleTimeout":900}"#.utf8)
+    #expect(try JSONDecoder().decode(Preferences.self, from: old).launchAtLogin)
+
+    let off = Data(#"{"launchAtLogin":false}"#.utf8)
+    #expect(try !JSONDecoder().decode(Preferences.self, from: off).launchAtLogin)
+}
+
 @Test func cleanDropsWhatYouAlreadyKnowAndKeepsWhatChanged() {
     #expect(!PanelLayout.clean.showsPrompt)
     #expect(!PanelLayout.clean.showsTasks)

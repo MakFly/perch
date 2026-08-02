@@ -106,6 +106,14 @@ public struct Preferences: Codable, Sendable, Equatable {
     /// quota is still in the panel's header on every tab, one hover from the notch.
     public var restingQuota: Bool
 
+    /// Come back on its own after a restart.
+    ///
+    /// On by default, which is unusual for a login item and right for this one: Perch has
+    /// no Dock icon and no menu bar item, so an install that quietly stopped running after
+    /// a reboot looks exactly like an install that works — until the notch stays empty
+    /// through a whole session and you conclude the hooks broke.
+    public var launchAtLogin: Bool
+
     public init(
         switcherKeyCode: UInt32 = 35,  // kVK_ANSI_P
         switcherModifiers: UInt32 = 4096 | 2048,  // controlKey | optionKey
@@ -119,10 +127,12 @@ public struct Preferences: Codable, Sendable, Equatable {
         showsRemainingQuota: Bool = false,
         quotaWarningThreshold: Double = 90,
         language: AppLanguage = .english,
-        restingQuota: Bool = true
+        restingQuota: Bool = true,
+        launchAtLogin: Bool = true
     ) {
         self.language = language
         self.restingQuota = restingQuota
+        self.launchAtLogin = launchAtLogin
         self.switcherKeyCode = switcherKeyCode
         self.switcherModifiers = switcherModifiers
         self.switcherEnabled = switcherEnabled
@@ -175,6 +185,12 @@ public struct Preferences: Codable, Sendable, Equatable {
         restingQuota =
             try container.decodeIfPresent(Bool.self, forKey: .restingQuota)
             ?? defaults.restingQuota
+        // A file written before this setting existed reads as "on", same as a fresh
+        // install: someone already running Perch is exactly who wants it back after a
+        // reboot, and the toggle is one pane away for anyone who does not.
+        launchAtLogin =
+            try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin)
+            ?? defaults.launchAtLogin
     }
 
     /// Clamped rather than validated: a tuning slider should never be able to make the

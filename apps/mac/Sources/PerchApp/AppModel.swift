@@ -70,7 +70,47 @@ final class AppModel {
         notch.applyTuning(
             width: sanitised.notchWidthAdjustment, height: sanitised.notchHeightAdjustment)
         updates.wantsBeta = sanitised.betaUpdates
+        LoginItem.apply(sanitised.launchAtLogin)
         registerSwitcherShortcut()
+    }
+
+    /// Asks macOS to open Perch at login the first time this setting is ever seen, and
+    /// never again.
+    ///
+    /// The signal is the absence of the key, not of the file: a fresh install has no
+    /// preferences at all, and an install that predates this setting has a file without
+    /// it. Both mean nobody has ever chosen, and both should end up starting at login —
+    /// which is the whole point, since the people already running Perch are exactly the
+    /// ones who want it back after a reboot.
+    ///
+    /// Once the key is on disk the system is left alone. Someone who turns Perch off in
+    /// System Settings › Login Items has said something, and an app that quietly puts
+    /// itself back at the next launch is an app you have to uninstall to be rid of.
+    private func seedLoginItem() {
+        let file = try? Data(contentsOf: Preferences.defaultURL)
+        let stored = file.flatMap { try? JSONSerialization.jsonObject(with: $0) }
+        if let object = stored as? [String: Any], object["launchAtLogin"] != nil { return }
+
+        let preferences = activity.preferences
+        LoginItem.apply(preferences.launchAtLogin)
+        // Written now rather than at the next settings change, so this runs exactly once.
+        preferences.save()
+    }
+
+    /// Squares the preference with what macOS actually does, once, at launch.
+    ///
+    /// The two can only disagree one way: someone turned Perch off — or back on — in
+    /// System Settings › Login Items, where the same switch lives. macOS wins, and the
+    /// preference is corrected rather than enforced, so the settings toggle tells the
+    /// truth without Perch ever overruling a choice made outside it.
+    private func reconcileLoginItem() {
+        guard LoginItem.isAvailable else { return }
+        let registered = LoginItem.isRegistered
+        guard activity.preferences.launchAtLogin != registered else { return }
+        var next = activity.preferences
+        next.launchAtLogin = registered
+        activity.preferences = next
+        next.save()
     }
 
     private func registerSwitcherShortcut() {
@@ -243,6 +283,9 @@ final class AppModel {
         // An agent is installed and nothing is wired up: this is a first run, and the
         // notch would otherwise sit empty with no explanation.
         if EnvironmentScan.needsOnboarding() { showOnboarding() }
+
+        seedLoginItem()
+        reconcileLoginItem()
 
         // Re-checked at launch, without blocking it.
         updates.wantsBeta = activity.preferences.betaUpdates

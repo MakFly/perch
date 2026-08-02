@@ -63,6 +63,10 @@ if CommandLine.arguments.contains("--settings") {
     exit(Diagnostics.settings())
 }
 
+if CommandLine.arguments.contains("--forget-login-item") {
+    exit(Diagnostics.forgetLoginItem())
+}
+
 if let index = CommandLine.arguments.firstIndex(of: "--render") {
     let path =
         CommandLine.arguments.count > index + 1

@@ -287,6 +287,17 @@ enum Diagnostics {
         }
     }
 
+    /// Takes Perch back out of the login items. Run by `uninstall.sh` while the bundle is
+    /// still on disk, because after it is deleted there is nothing left to call
+    /// `unregister()` on and macOS keeps the entry until it next notices the app is gone.
+    ///
+    /// Unlike everything else here it talks to no running instance: the uninstaller quits
+    /// Perch before it gets this far.
+    static func forgetLoginItem() -> Int32 {
+        LoginItem.apply(false)
+        return 0
+    }
+
     private static func send(
         event: String,
         payload: ClaudeHookPayload = ClaudeHookPayload(),

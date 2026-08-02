@@ -110,6 +110,9 @@
 "Notch" = "Encoche";
 "Reset to what macOS reports" = "Revenir à ce que macOS annonce";
 "Show the plan beside the cutout when nothing is running" = "Afficher le forfait à côté de l'encoche quand rien ne tourne";
+"Startup" = "Démarrage";
+"Open Perch at login" = "Ouvrir Perch à l'ouverture de session";
+"Perch has no Dock icon and no menu bar item, so an install that stopped running after a restart looks like one that works. macOS lists it under System Settings › General › Login Items." = "Perch n'a ni icône dans le Dock ni élément de barre de menus : une install qui a cessé de tourner après un redémarrage ressemble à une install qui marche. macOS la liste dans Réglages Système › Général › Ouverture.";
 "Idle sessions" = "Sessions inactives";
 "Forget a silent session after" = "Oublier une session silencieuse après";
 "Never" = "Jamais";

@@ -187,6 +187,16 @@ private struct GeneralPane: View {
             }
 
             Section(
+                t("Startup"),
+                note: t(
+                    "Perch has no Dock icon and no menu bar item, so an install that stopped "
+                        + "running after a restart looks like one that works. macOS lists it "
+                        + "under System Settings › General › Login Items.")
+            ) {
+                Toggle(t("Open Perch at login"), isOn: launchAtLogin)
+            }
+
+            Section(
                 t("Updates"),
                 note: t("Beta builds come from the same feed's neighbour, signed by the same key.")
             ) {
@@ -345,6 +355,20 @@ private struct GeneralPane: View {
                 // relaunch — by the button beside it or by hand — comes back in the right
                 // language whichever way it happens.
                 applyLanguagePreference(next)
+            })
+    }
+
+    /// Reads the preference, not `SMAppService`, even though macOS is what actually
+    /// decides: the preference is squared with the system at launch, and it is the only
+    /// one of the two that SwiftUI can observe — a toggle reading the service directly
+    /// would flip and then redraw itself back, because nothing told the view to update.
+    private var launchAtLogin: Binding<Bool> {
+        Binding(
+            get: { model.preferences.launchAtLogin },
+            set: { value in
+                var next = model.preferences
+                next.launchAtLogin = value
+                model.updatePreferences(next)
             })
     }
 

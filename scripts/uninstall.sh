@@ -392,6 +392,13 @@ for app in \
   case "$SEEN" in *"|$app|"*) continue ;; esac
   SEEN="$SEEN|$app|"
   APP_FOUND=1
+  # Before the bundle goes, not after: the login item is registered with macOS against
+  # this app, and only this app can hand it back. Deleting the bundle first leaves the
+  # entry sitting in System Settings › Login Items pointing at nothing.
+  if [ -x "$app/Contents/MacOS/Perch" ]; then
+    act "remove Perch from the login items" &&
+      "$app/Contents/MacOS/Perch" --forget-login-item >/dev/null 2>&1 || true
+  fi
   act "delete $app" && rm -rf "$app"
 done
 [ "$APP_FOUND" -eq 0 ] && ok "no Perch.app found in the usual places"
