@@ -1,4 +1,5 @@
 import Foundation
+import PerchKit
 import ServiceManagement
 
 /// Whether macOS opens Perch when the user logs in.
@@ -45,7 +46,7 @@ enum LoginItem {
                 try service.unregister()
             }
         } catch {
-            NSLog("perch: could not \(enabled ? "register" : "unregister") login item: \(error)")
+            PerchLog.error("could not \(enabled ? "register" : "unregister") login item: \(error)")
         }
     }
 }

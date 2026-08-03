@@ -311,7 +311,7 @@ final class AppModel {
             try server.start()
             self.server = server
         } catch {
-            NSLog("perch: could not start event server: \(error)")
+            PerchLog.error("could not start event server: \(error)")
         }
     }
 

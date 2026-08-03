@@ -99,6 +99,10 @@ final class UsageModel {
             self.store = store
             self.indexer = UsageIndexer(store: store)
         } catch {
+            // Also to the log, not only to the panel. A store that fails to open takes the
+            // token counts down with it, and the user's first sign of that is a screen of
+            // zeroes — which reads as "I have not used anything", not as a broken index.
+            PerchLog.error("usage store did not open: \(error)")
             indexError = "\(error)"
             return
         }
@@ -142,6 +146,7 @@ final class UsageModel {
                         .value
                 }
             case .failure(let error):
+                PerchLog.error("indexing failed: \(error)")
                 indexError = "\(error)"
             }
             isIndexing = false
@@ -310,6 +315,7 @@ final class UsageModel {
                 // and an empty list would take the selector away mid-look.
                 agents = aggregates.agents.isEmpty ? [agent] : aggregates.agents
             case .failure(let error):
+                PerchLog.error("reading the aggregates failed: \(error)")
                 indexError = "\(error)"
             }
         }

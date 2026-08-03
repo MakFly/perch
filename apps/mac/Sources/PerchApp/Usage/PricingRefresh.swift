@@ -79,7 +79,7 @@ enum PricingRefresh {
             try encoder.encode(cache).write(to: cacheURL, options: .atomic)
         } catch {
             // Applied in memory either way: an unwritable cache costs one fetch tomorrow.
-            NSLog("perch: could not write the pricing cache: \(error)")
+            PerchLog.error("could not write the pricing cache: \(error)")
         }
     }
 }

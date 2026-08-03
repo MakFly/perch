@@ -60,7 +60,7 @@ enum TerminalJumper {
                 try process.run()
                 process.waitUntilExit()
             } catch {
-                NSLog("perch: jump failed: \(error)")
+                PerchLog.error("jump failed: \(error)")
             }
         }
     }
@@ -87,7 +87,7 @@ enum TerminalJumper {
                 try process.run()
                 process.waitUntilExit()
             } catch {
-                NSLog("perch: \(executable) is not on PATH — jumped to the window only")
+                PerchLog.error("\(executable) is not on PATH — jumped to the window only")
             }
         }
     }

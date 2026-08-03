@@ -61,7 +61,7 @@ final class EventServer: @unchecked Sendable {
         do {
             try info.write()
         } catch {
-            NSLog("perch: could not write runtime.json: \(error)")
+            PerchLog.error("could not write runtime.json: \(error)")
         }
     }
 

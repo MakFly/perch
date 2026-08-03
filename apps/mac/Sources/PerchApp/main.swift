@@ -12,14 +12,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let notifications = NotificationRouter()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // The one line that has to be there whether or not anything goes wrong.
+        //
+        // Every other call into `PerchLog` is on a failure path, which means a log file
+        // that only exists once the app has already broken — and a crash reconstructed
+        // from it could not tell "started at 21:03 and died" from "never started". A
+        // launch is also the only place the version and the pid are both known, and the
+        // pid is what ties a line here to a `.ips` report.
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+        PerchLog.info(
+            "Perch \(version ?? "?") launched, pid \(ProcessInfo.processInfo.processIdentifier)")
+
         UNUserNotificationCenter.current().delegate = notifications
         model.start()
         controller.start(content: NotchRootView(controller: controller, model: model))
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // Paired with the launch line: a log that ends here records a quit, and a log that
+        // ends without it records a death. That difference is the whole question being
+        // asked of this file after a crash, and nothing else in the app answers it.
+        PerchLog.info("Perch is quitting")
         // Leaving a stale runtime.json behind would make every hook wait for a timeout.
         model.stop()
+        // After the stop, so anything it logs on the way down is included: an `info` is
+        // written on a queue this process is about to stop draining.
+        PerchLog.flush()
     }
 }
 

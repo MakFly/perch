@@ -1,6 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 import Foundation
+import PerchKit
 
 /// A system-wide shortcut, registered through Carbon.
 ///
@@ -62,7 +63,7 @@ final class GlobalHotKey {
         let status = RegisterEventHotKey(
             keyCode, modifiers, hotKeyId, GetApplicationEventTarget(), 0, &reference)
         if status != noErr {
-            NSLog("perch: could not register the switcher shortcut (\(status))")
+            PerchLog.error("could not register the switcher shortcut (\(status))")
         }
 
         // Releasing the modifier is what ⌘Tab-style cycling ends on. A *global* key
