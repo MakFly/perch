@@ -185,11 +185,118 @@ struct AnsweredTests {
     #expect(children.last?.label == "subagent")
     #expect(children.last?.startedAt == epoch.addingTimeInterval(30))
 
-    // Oldest first: the events carry no id to pair a stop with its own start, so the only
-    // honest reading is that one of them finished.
+    // No id in these events, so the old reading stands: one of them finished, and the
+    // oldest is the honest guess. See below for what happens when the id is there.
     tracker.record(id: "s1", kind: "SubagentStop", at: epoch.addingTimeInterval(60))
     #expect(tracker.sessions["s1"]?.children.map(\.label) == ["subagent"])
     #expect(tracker.subagentCount == 1)
+}
+
+/// The id was in the payload the whole time. Two agents launched together and finishing
+/// out of order used to swap names on the card, and the row that vanished belonged to the
+/// one still running.
+@Test func aSubagentStopClosesTheRowItBelongsTo() {
+    var tracker = SessionTracker()
+    tracker.record(
+        id: "s1", kind: "SubagentStart", subagentLabel: "yoda", agentId: "a1", at: epoch)
+    tracker.record(
+        id: "s1", kind: "SubagentStart", subagentLabel: "obiwan", agentId: "a2",
+        at: epoch.addingTimeInterval(5))
+
+    // The second one finishes first, which is the case that was always wrong.
+    tracker.record(
+        id: "s1", kind: "SubagentStop", agentId: "a2", at: epoch.addingTimeInterval(60))
+
+    #expect(tracker.sessions["s1"]?.children.map(\.label) == ["yoda"])
+    #expect(tracker.sessions["s1"]?.children.first?.startedAt == epoch)
+
+    // An agent older than Perch stops too, and closes nothing it does not own.
+    tracker.record(
+        id: "s1", kind: "SubagentStop", agentId: "unknown", at: epoch.addingTimeInterval(70))
+    #expect(tracker.sessions["s1"]?.children.map(\.label) == ["yoda"])
+}
+
+/// The bug this whole state exists for: `Stop` fires when background work is *launched*,
+/// so a session that delegated anything reported itself finished — and `visible` hid the
+/// card — for exactly as long as there was something to watch.
+@Test func aTurnThatEndsWithWorkStillRunningIsNotIdle() {
+    var tracker = SessionTracker()
+    let agent = BackgroundTask(
+        id: "a1", kind: "subagent", status: "running", label: "Lot 2A auth HMAC",
+        agentType: "yoda")
+    let shell = BackgroundTask(
+        id: "b1", kind: "shell", status: "running", label: "Watch the CI",
+        command: "gh run watch")
+
+    tracker.record(id: "s1", kind: "UserPromptSubmit", prompt: "split the repo", at: epoch)
+    tracker.record(id: "s1", kind: "Stop", backgroundTasks: [agent, shell], at: epoch)
+
+    #expect(tracker.sessions["s1"]?.status == .background)
+    // The card stays on screen, which is the entire point.
+    #expect(tracker.visible.count == 1)
+    #expect(tracker.sessions["s1"]?.isWorking == true)
+    // A backgrounded command has no start or stop event of its own; the `Stop` list is
+    // the only place it is ever mentioned.
+    #expect(tracker.sessions["s1"]?.background.count == 2)
+    // And the agent earns a child row even though Perch never saw it start.
+    #expect(tracker.sessions["s1"]?.children.map(\.label) == ["Lot 2A auth HMAC"])
+
+    // Everything came back: now the turn really is over.
+    tracker.record(id: "s1", kind: "Stop", backgroundTasks: [], at: epoch.addingTimeInterval(600))
+    #expect(tracker.sessions["s1"]?.status == .idle)
+    #expect(tracker.sessions["s1"]?.children.isEmpty == true)
+    #expect(tracker.visible.isEmpty)
+}
+
+/// A CLI that reports no such list — Codex — must not have its subagents wiped by a `Stop`
+/// that says nothing about them.
+@Test func aStopWithNoBackgroundListLeavesWhatIsKnownAlone() {
+    var tracker = SessionTracker()
+    tracker.record(id: "s1", kind: "SubagentStart", subagentLabel: "reviewer", at: epoch)
+    tracker.record(id: "s1", kind: "Stop", at: epoch.addingTimeInterval(10))
+
+    #expect(tracker.sessions["s1"]?.children.count == 1)
+    #expect(tracker.sessions["s1"]?.status == .background)
+}
+
+/// A subagent's tool calls arrive under the *parent's* session id. Acting on them put the
+/// agent's command on the parent's card and flipped it out of `background` between two
+/// `Stop`s, several times a minute, for the whole run.
+@Test func aSubagentsToolCallsDoNotMoveTheParentsCard() {
+    var tracker = SessionTracker()
+    let agent = BackgroundTask(id: "a1", kind: "subagent", status: "running", label: "yoda")
+
+    tracker.record(id: "s1", kind: "PreToolUse", detail: "src/auth.ts", at: epoch)
+    tracker.record(id: "s1", kind: "Stop", backgroundTasks: [agent], at: epoch)
+    #expect(tracker.sessions["s1"]?.status == .background)
+
+    // The agent runs a command of its own, ten minutes in.
+    let later = epoch.addingTimeInterval(600)
+    tracker.record(
+        id: "s1", kind: "PreToolUse", detail: "bun test", agentId: "a1", at: later)
+
+    #expect(tracker.sessions["s1"]?.status == .background)
+    #expect(tracker.sessions["s1"]?.lastDetail == "src/auth.ts")
+    // It still counts as a sign of life, so the session does not age out mid-run.
+    #expect(tracker.sessions["s1"]?.lastEvent == later)
+}
+
+/// A session whose only sign of life is a long agent emits no hooks of its own. Ageing it
+/// out deleted the card, children and all, and the `SubagentStop` that eventually arrived
+/// recreated a blank, untitled session at the bottom of the list.
+@Test func aSessionIsNotAgedOutWhileItsBackgroundWorkRuns() {
+    var tracker = SessionTracker(timeout: 30 * 60)
+    let agent = BackgroundTask(id: "a1", kind: "subagent", status: "running", label: "yoda")
+
+    tracker.record(id: "s1", kind: "Stop", backgroundTasks: [agent], at: epoch)
+    tracker.prune(now: epoch.addingTimeInterval(3 * 3_600))
+    #expect(tracker.sessions["s1"] != nil)
+
+    // Once it has come back, the session ages like any other.
+    tracker.record(
+        id: "s1", kind: "Stop", backgroundTasks: [], at: epoch.addingTimeInterval(3 * 3_600))
+    tracker.prune(now: epoch.addingTimeInterval(6 * 3_600))
+    #expect(tracker.sessions["s1"] == nil)
 }
 
 @Test func cwdAndDetailSurviveEventsThatDoNotCarryThem() {

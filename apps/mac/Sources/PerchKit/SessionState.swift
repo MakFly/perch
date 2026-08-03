@@ -30,6 +30,18 @@ public enum SessionStatus: String, Sendable, Codable {
     case failed
     /// Context is being compacted, which can take a while and otherwise reads as a hang.
     case compacting
+    /// The turn is over and the work it started is not: a background agent, or a command
+    /// left running.
+    ///
+    /// `Stop` fires the moment something is launched in the background — not when it comes
+    /// back. Every session that delegated anything therefore reported itself finished
+    /// while the work was still going, and `visible` hid the card for exactly as long as
+    /// there was something to watch. Twenty minutes of an agent working is the one stretch
+    /// this app exists for, and it was the one stretch with nothing on screen.
+    ///
+    /// Not `working`: the model has handed back and is composing nothing. Not `idle`
+    /// either, and that is the whole point.
+    case background
 
     /// Something is blocked on a person, and can be unblocked from here. These are the
     /// states worth crossing the room for, and the ones the panel colours ahead of
@@ -43,7 +55,7 @@ public enum SessionStatus: String, Sendable, Codable {
     public var needsYou: Bool {
         switch self {
         case .needsApproval, .waitingForAnswer: return true
-        case .working, .runningTool, .idle, .failed, .compacting: return false
+        case .working, .runningTool, .idle, .failed, .compacting, .background: return false
         }
     }
 }
@@ -54,11 +66,20 @@ public enum SessionStatus: String, Sendable, Codable {
 /// A count answered "how many"; it never answered "how long has that one been going",
 /// which is the question you actually have when a session has been busy for ten minutes.
 public struct SubagentRun: Sendable, Equatable, Identifiable {
-    public let id = UUID()
+    /// Claude Code's own `agent_id`, which is what pairs a stop with its own start.
+    ///
+    /// This used to be a fresh `UUID`, and it is why stops closed the oldest row rather
+    /// than the right one: with nothing to match on, "one of them finished" was the only
+    /// honest reading. The id was in the payload the whole time.
+    ///
+    /// A CLI that sends none still gets a row — it falls back to a generated id, and that
+    /// row closes oldest-first exactly as before.
+    public let id: String
     public var label: String
     public var startedAt: Date
 
-    public init(label: String, startedAt: Date) {
+    public init(id: String? = nil, label: String, startedAt: Date) {
+        self.id = id ?? UUID().uuidString
         self.label = label
         self.startedAt = startedAt
     }
@@ -92,10 +113,19 @@ public struct SessionSnapshot: Sendable, Equatable {
     /// Subagents currently running under this session — fan-out `Task` calls and Agent
     /// Team members both report through `SubagentStart` / `SubagentStop`.
     ///
-    /// Oldest first, and closed in that order: the events carry no id to pair a stop with
-    /// its own start, so the only honest reading is that one of them finished. The count
-    /// stays right, which is what the notch and the card both show.
+    /// Oldest first, and matched by `agent_id`: a stop closes the row it belongs to, not
+    /// whichever one started first. Two agents launched together and finishing out of
+    /// order used to swap names on the card, and the one still running was the one whose
+    /// row disappeared.
     public var children: [SubagentRun] = []
+
+    /// What is still running now that the turn has ended, straight from the `Stop` payload.
+    ///
+    /// Includes the backgrounded shell commands, which have no start/stop event of their
+    /// own and were invisible: `PostToolUse` fires when the command is *launched*, so a
+    /// command that ran for twenty minutes was recorded as finished within a second of
+    /// starting.
+    public var background: [BackgroundTask] = []
 
     /// How many are running. Kept as the name every caller already used.
     public var subagents: Int { children.count }
@@ -161,7 +191,17 @@ public struct SessionSnapshot: Sendable, Equatable {
     /// The states that are blocked on a person deliberately do not.
     public var isWorking: Bool {
         status == .working || status == .runningTool || status == .compacting
+            || status == .background
     }
+
+    /// Work still going with nothing left to announce it.
+    ///
+    /// A session whose only sign of life is a twenty-minute agent emits no hooks of its
+    /// own, so ageing it out on `lastEvent` deleted the card — children and all — and the
+    /// `SubagentStop` that eventually arrived recreated a blank, untitled session at the
+    /// bottom of the list. A backgrounded shell command is worse: it never emits anything
+    /// at all.
+    public var hasLiveWork: Bool { !background.isEmpty || !children.isEmpty }
 
     /// The card's heading: the prompt if we have one, the project otherwise.
     /// What the card calls this session. Claude Code's own name first — it is the one you
@@ -278,12 +318,26 @@ public struct SessionTracker: Sendable {
         /// What a subagent is, when the payload says. Fan-out `Task` calls carry the type
         /// they were asked for.
         subagentLabel: String? = nil,
+        /// Which subagent the event is about, when it is not the main loop's.
+        agentId: String? = nil,
+        /// What is still running, as `Stop` reports it. `nil` means the event does not
+        /// carry the list, which is not the same as the list being empty — only `Stop` and
+        /// `SubagentStop` say, and everything else must leave what is known alone.
+        backgroundTasks: [BackgroundTask]? = nil,
         at date: Date = .now
     ) {
         if kind == "SessionEnd" {
             remove(id: id)
             return
         }
+
+        // A tool call made by a subagent arrives under the *parent's* session id, carrying
+        // the agent's own id. It is the subagent's work, not the session's: letting it
+        // through put the agent's command on the parent's card and flipped the card back
+        // out of `background` between two `Stop`s, several times a minute, for the whole
+        // length of the run. The event still counts as a sign of life — it keeps the
+        // session from ageing out — but it does not get to say what the session is doing.
+        let belongsToSubagent = agentId != nil && !Self.subagentLifecycle.contains(kind)
 
         var session =
             sessions[id]
@@ -295,7 +349,9 @@ public struct SessionTracker: Sendable {
         session.lastEvent = date
         // Lifecycle events carry no detail worth showing — letting them through put
         // "SubagentStart" on the card where the file being edited belongs.
-        if !detail.isEmpty, !Self.lifecycleKinds.contains(kind) { session.lastDetail = detail }
+        if !detail.isEmpty, !Self.lifecycleKinds.contains(kind), !belongsToSubagent {
+            session.lastDetail = detail
+        }
         // A new prompt replaces the old one: the card should describe the current task,
         // not the one it opened with.
         if let prompt, !prompt.isEmpty { session.prompt = Self.condense(prompt) }
@@ -311,18 +367,44 @@ public struct SessionTracker: Sendable {
         if let permissionMode, !permissionMode.isEmpty { session.permissionMode = permissionMode }
 
         switch kind {
+        case _ where belongsToSubagent:
+            // The event has already done its one job above: it moved `lastEvent`, so the
+            // session does not age out while its agent works.
+            break
         case "SubagentStart":
-            session.children.append(
-                SubagentRun(label: Self.subagentName(subagentLabel), startedAt: date))
+            // Keyed by the agent's own id, so a start seen twice — a reconnect, a replayed
+            // event — does not put the same agent on the card twice.
+            if agentId == nil || !session.children.contains(where: { $0.id == agentId }) {
+                session.children.append(
+                    SubagentRun(
+                        id: agentId, label: Self.subagentName(subagentLabel), startedAt: date))
+            }
             session.status = .working
         case "SubagentStop":
-            // Oldest first, and never below empty: a subagent that started before Perch
-            // did still stops, and there is nothing of its own to close.
-            if !session.children.isEmpty { session.children.removeFirst() }
+            // By id, so the row that closes is the one that finished. An id Perch never saw
+            // start — an agent older than the app — closes nothing here, and the `Stop`
+            // that follows reconciles the list against what is actually running.
+            if let agentId {
+                session.children.removeAll { $0.id == agentId }
+            } else if !session.children.isEmpty {
+                // Oldest first, for a CLI that sends no id. This is what it always did.
+                session.children.removeFirst()
+            }
         case "PreCompact":
             session.status = .compacting
         case "Stop":
-            session.status = .idle
+            // The turn ending is not the work ending. `Stop` fires when something is
+            // launched in the background, not when it comes back, and the payload carries
+            // the list of what is still going — so this is read, not guessed.
+            if let backgroundTasks {
+                session.background = backgroundTasks.filter(\.isRunning)
+                session.children = Self.reconcile(session.children, with: session.background, at: date)
+                session.status = session.background.isEmpty ? .idle : .background
+            } else {
+                // A CLI that reports no such list — Codex — leaves only what the subagent
+                // events already said.
+                session.status = session.children.isEmpty ? .idle : .background
+            }
         case "StopFailure":
             session.status = .failed
         case "PermissionRequest":
@@ -334,8 +416,13 @@ public struct SessionTracker: Sendable {
             // Claude Code raises these for several reasons; only one of them means the
             // turn has stopped and is waiting on a person — and it says nothing `Stop` did
             // not already say, so it lands on the same state.
+            //
+            // Unless something is still running: "waiting for your input" and "an agent is
+            // working" are both true at once, and the one worth showing is the one you
+            // cannot see from the terminal.
+            let stalled = Self.saysWaitingForInput(message ?? detail)
             session.status =
-                Self.saysWaitingForInput(message ?? detail) ? .idle : session.status
+                stalled ? (session.background.isEmpty ? .idle : .background) : session.status
         case "PreToolUse":
             session.status = .runningTool
         case "PostToolUse", "PostToolUseFailure", "PermissionDenied":
@@ -372,6 +459,30 @@ public struct SessionTracker: Sendable {
         return text.contains("waiting for your input") || text.contains("is waiting for")
     }
 
+    /// The events that are *about* a subagent rather than *from* one. Both carry an
+    /// `agent_id`, and only these two are the session's business to act on.
+    static let subagentLifecycle: Set<String> = ["SubagentStart", "SubagentStop"]
+
+    /// Brings the child rows in line with what `Stop` says is actually running.
+    ///
+    /// The rows Perch built from `SubagentStart` are kept where they match, because they
+    /// know when the agent started and the `Stop` list does not say. Anything running with
+    /// no row yet gets one: an agent launched before Perch was — or before its hooks were
+    /// installed — is otherwise invisible for the whole of its run.
+    static func reconcile(
+        _ children: [SubagentRun], with running: [BackgroundTask], at date: Date
+    ) -> [SubagentRun] {
+        let subagents = running.filter(\.isSubagent)
+        let live = Set(subagents.map(\.id))
+        var rows = children.filter { live.contains($0.id) }
+        let known = Set(rows.map(\.id))
+        for task in subagents where !known.contains(task.id) {
+            rows.append(
+                SubagentRun(id: task.id, label: subagentName(task.displayName), startedAt: date))
+        }
+        return rows
+    }
+
     /// A fan-out `Task` says what it asked for; an Agent Team member says who it is. When
     /// the payload says neither, the count is still the useful part.
     static func subagentName(_ label: String?) -> String {
@@ -404,7 +515,7 @@ public struct SessionTracker: Sendable {
         // it can turn ageing off entirely and never lose a long-running session.
         guard !holdsSteady, timeout > 0 else { return }
         let cutoff = now.addingTimeInterval(-timeout)
-        let survivors = sessions.filter { $0.value.lastEvent > cutoff }
+        let survivors = sessions.filter { $0.value.lastEvent > cutoff || $0.value.hasLiveWork }
         // Assigning unconditionally would publish a change every time this is called, and
         // it is now called on a timer — two pointless redraws a minute, forever.
         guard survivors.count != sessions.count else { return }

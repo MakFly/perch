@@ -242,3 +242,60 @@ private func specific(of output: HookOutput) throws -> [String: Any] {
             == "audit the API")
     #expect(request(#"{"unrelated": "value"}"#).subagentLabel == nil)
 }
+
+/// A verbatim `Stop` payload, captured from a real session that had delegated work.
+///
+/// This is the field the whole `background` state rests on, and it is one Claude Code
+/// could rename without anything else here noticing: the session would simply go back to
+/// reporting itself finished the moment it launched an agent. Pinning the real shape is
+/// what turns that into a failing test rather than a silent regression.
+@Test func aStopPayloadCarriesWhatTheTurnLeavesRunning() throws {
+    let json = """
+        {"session_id":"9cc93930","transcript_path":"/x.jsonl","cwd":"/tmp/x",
+         "hook_event_name":"Stop","permission_mode":"bypassPermissions",
+         "background_tasks":[
+           {"id":"abd19c96","type":"subagent","status":"running",
+            "description":"Count lines in sample.txt","agent_type":"general-purpose"},
+           {"id":"brnr1bpcp","type":"shell","status":"running",
+            "description":"Run sleep then echo","command":"sleep 25 && echo done"}],
+         "session_crons":[]}
+        """
+    let payload = try JSONDecoder().decode(ClaudeHookPayload.self, from: Data(json.utf8))
+    let tasks = try #require(payload.backgroundTasks)
+
+    #expect(tasks.count == 2)
+    #expect(tasks.filter(\.isRunning).count == 2)
+    #expect(tasks[0].isSubagent)
+    // The description, not the agent type: "Count lines in sample.txt" says more on a card
+    // than "general-purpose" does.
+    #expect(tasks[0].displayName == "Count lines in sample.txt")
+    #expect(tasks[1].isSubagent == false)
+    #expect(tasks[1].command == "sleep 25 && echo done")
+
+    // And a turn with nothing left running says so explicitly, rather than by omission.
+    let done = try JSONDecoder().decode(
+        ClaudeHookPayload.self, from: Data(#"{"background_tasks":[]}"#.utf8))
+    let empty = try #require(done.backgroundTasks)
+    #expect(empty.isEmpty)
+
+    // A CLI that sends no such field is not the same as one reporting nothing running.
+    let silent = try JSONDecoder().decode(ClaudeHookPayload.self, from: Data("{}".utf8))
+    #expect(silent.backgroundTasks == nil)
+}
+
+/// The subagent's own id, on the events that are about it and on the tool calls it makes —
+/// which arrive under the parent's session id and are otherwise indistinguishable from the
+/// main agent's own work.
+@Test func aSubagentsEventsCarryItsId() throws {
+    let json = """
+        {"session_id":"9cc93930","agent_id":"abd19c96","agent_type":"general-purpose",
+         "hook_event_name":"PreToolUse","tool_name":"Bash"}
+        """
+    let payload = try JSONDecoder().decode(ClaudeHookPayload.self, from: Data(json.utf8))
+
+    #expect(payload.agentId == "abd19c96")
+    #expect(payload.sessionId == "9cc93930")
+    let request = PerchRequest(
+        token: "t", event: "PreToolUse", wantsDecision: false, payload: payload)
+    #expect(request.subagentLabel == "general-purpose")
+}

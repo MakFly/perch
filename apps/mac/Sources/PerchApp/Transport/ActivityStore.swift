@@ -187,6 +187,10 @@ final class ActivityStore {
                 tool: request.payload.toolName,
                 message: request.payload.message,
                 subagentLabel: request.subagentLabel,
+                // Which agent the event is about — and, on a `Stop`, everything the turn
+                // leaves running behind it.
+                agentId: request.payload.agentId,
+                backgroundTasks: request.payload.backgroundTasks,
                 at: event.date)
         }
     }

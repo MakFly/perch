@@ -397,6 +397,14 @@ final class AppModel {
             // and nobody read it, so that setting only ever changed whether a sound
             // played. Reading it is the whole feature.
             switch request.event {
+            // A `Stop` that leaves an agent running is not a finish. It fires the moment
+            // work is handed to the background, so announcing it there played the
+            // completion sound, flashed "finished" and posted a notification while the
+            // thing being announced had not started coming back yet — and did it again
+            // for real, twenty minutes later, when it had. The turn that carries an empty
+            // list is the one worth a sound.
+            case "Stop" where request.payload.backgroundTasks?.contains(where: \.isRunning) == true:
+                break
             case "Stop":
                 // A flash rather than a peek: which session finished is one line, and it
                 // is gone in two seconds whether or not anyone looked up.

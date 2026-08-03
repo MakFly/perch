@@ -307,7 +307,27 @@ extension SessionSnapshot {
             // The same line either way: what it is doing is the command, and the dot
             // beside it already says whether a tool is in flight.
             return (lastDetail, Theme.info)
+        case .background:
+            // The turn is over and the terminal has gone quiet, which is precisely when
+            // the line has to say what is still running — name it when there is one thing,
+            // count them when there are several.
+            return (backgroundSummary, Theme.info)
         }
+    }
+
+    /// "yoda", or "2 agents", or "1 agent, 1 command" — whichever is true.
+    var backgroundSummary: String {
+        let agents = background.filter(\.isSubagent)
+        let shells = background.filter { !$0.isSubagent }
+        if background.count == 1, let only = background.first {
+            return t("%@ is still running", only.displayName)
+        }
+        var parts: [String] = []
+        if !agents.isEmpty { parts.append(t("%lld agents", agents.count)) }
+        if !shells.isEmpty { parts.append(t("%lld commands", shells.count)) }
+        // Only reachable for a CLI that says something is running without saying what.
+        if parts.isEmpty { return t("Still running") }
+        return t("%@ still running", parts.joined(separator: ", "))
     }
 }
 
@@ -324,6 +344,9 @@ struct StatusDot: View {
         case .compacting: return Theme.warning
         case .idle: return Theme.tertiary
         case .failed: return Theme.danger
+        // The same colour as working, because it is: nobody is blocked, something is
+        // running. What differs is that no one is in front of it.
+        case .background: return Theme.active
         }
     }
 
@@ -331,6 +354,8 @@ struct StatusDot: View {
     /// live — it is stopped, and a heartbeat would say the opposite.
     private var isLive: Bool {
         status == .working || status == .runningTool || status == .compacting
+            // Work carrying on with nobody in front of it is the most live a session gets.
+            || status == .background
     }
 
     var body: some View {

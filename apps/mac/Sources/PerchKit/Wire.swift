@@ -21,6 +21,63 @@ public enum Wire {
     public static let usageEvent = "__usage"
 }
 
+/// One piece of work a session carries on with after its turn has ended.
+///
+/// Claude Code puts the live list on every `Stop`, and it is the only place it says out
+/// loud that a finished turn is not finished work. Without reading it, `Stop` is
+/// indistinguishable from being done — which it is not, from the moment anything is
+/// launched in the background.
+///
+/// A fan-out agent and a backgrounded command are the same situation seen from the notch:
+/// the terminal has gone quiet and something in it is still running.
+public struct BackgroundTask: Codable, Sendable, Equatable, Identifiable {
+    /// Claude Code's own id — `agent_id` for a subagent, the shell's id for a command.
+    public var id: String
+    /// `subagent` or `shell`. Kept as a string rather than an enum: a kind Perch has not
+    /// seen yet is still work in flight, and it should show as one rather than be dropped.
+    public var kind: String
+    /// `running` is the one that matters. Anything else has stopped mattering.
+    public var status: String
+    /// What it is for, in Claude Code's words — "Count lines in sample.txt" says more on a
+    /// card than "general-purpose" ever did.
+    public var label: String?
+    /// Subagents only.
+    public var agentType: String?
+    /// Shells only.
+    public var command: String?
+
+    public var isRunning: Bool { status == "running" }
+    public var isSubagent: Bool { kind == "subagent" }
+
+    /// What the card calls it, best first: the description, then the agent's type, then
+    /// the command it is running.
+    public var displayName: String {
+        for candidate in [label, agentType, command] {
+            if let candidate, !candidate.isEmpty { return candidate }
+        }
+        return isSubagent ? "subagent" : "command"
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, status, command
+        case kind = "type"
+        case label = "description"
+        case agentType = "agent_type"
+    }
+
+    public init(
+        id: String, kind: String, status: String, label: String? = nil,
+        agentType: String? = nil, command: String? = nil
+    ) {
+        self.id = id
+        self.kind = kind
+        self.status = status
+        self.label = label
+        self.agentType = agentType
+        self.command = command
+    }
+}
+
 /// The subset of the Claude Code hook payload we care about.
 ///
 /// The hook binary forwards the payload verbatim, so unknown fields survive the trip
@@ -46,6 +103,19 @@ public struct ClaudeHookPayload: Codable, Sendable {
     /// session that changes what an unattended agent is allowed to do to the machine, and
     /// it is invisible from anywhere else once the terminal is off screen.
     public var permissionMode: String?
+    /// Which subagent this event belongs to, when it is not the main loop's.
+    ///
+    /// On `SubagentStart` and `SubagentStop` it is what pairs one with the other. It is
+    /// also on the `PreToolUse` and `PostToolUse` of every tool a subagent runs — and
+    /// those arrive under the *parent's* session id, so until this was read they were
+    /// indistinguishable from the main agent's own work and moved the parent's card.
+    public var agentId: String?
+    /// The subagent's type, alongside `agentId` and on the same events.
+    public var agentType: String?
+    /// Everything still running when the turn ended. Only `Stop` and `SubagentStop` carry
+    /// it, and on `Stop` it is the difference between a session that is done and one whose
+    /// main loop is parked while an agent grinds on.
+    public var backgroundTasks: [BackgroundTask]?
 
     enum CodingKeys: String, CodingKey {
         case sessionId = "session_id"
@@ -57,6 +127,9 @@ public struct ClaudeHookPayload: Codable, Sendable {
         case message
         case prompt
         case permissionMode = "permission_mode"
+        case agentId = "agent_id"
+        case agentType = "agent_type"
+        case backgroundTasks = "background_tasks"
     }
 
     public init() {}
@@ -201,6 +274,9 @@ extension PerchRequest {
     /// member carries a name, and the spelling has moved between releases. Nothing here is
     /// load-bearing — a subagent with no label is still a subagent, and shows as one.
     public var subagentLabel: String? {
+        // `agent_type` is modelled now, and it is the one Claude Code actually sends on
+        // these events. The hunt below stays as the fallback it always was.
+        if let typed = payload.agentType, !typed.isEmpty { return typed }
         let keys = ["subagent_type", "agent_type", "agentType", "agent", "description", "name"]
         for key in keys {
             if let value = payload.toolInput?[key]?.stringValue, !value.isEmpty { return value }

@@ -31,6 +31,10 @@
 "Waiting for your input" = "Waiting for your input";
 "Ended on a failure" = "Ended on a failure";
 "%lld agents" = "%lld agents";
+"%lld commands" = "%lld commands";
+"%@ is still running" = "%@ is still running";
+"%@ still running" = "%@ still running";
+"Still running" = "Still running";
 "Hide sessions in %@" = "Hide sessions in %@";
 "Silence prompts starting with “%@…”" = "Silence prompts starting with “%@…”";
 

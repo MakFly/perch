@@ -219,6 +219,28 @@ switching to the terminal. This is that gap, closed.
       releases — and when it started, which is the question you actually have ten minutes
       into a quiet card. They close oldest-first: the events carry no id pairing a stop
       with its own start, and inventing one would be a guess presented as a fact.
+- [x] **A turn that ends is not work that ends.** `Stop` fires when a background agent is
+      *launched*, not when it comes back — so every session that delegated anything
+      reported itself finished, and `visible` hid the card for exactly as long as there was
+      something to watch. The payload said so all along: `Stop` carries `background_tasks`,
+      one entry per thing still running, `subagent` and `shell` alike. Read, not guessed,
+      and it earns its own state — neither `working` (the model has handed back) nor `idle`
+      (something is running). It also brings backgrounded shell commands onto the card for
+      the first time: they have no start or stop event, and `PostToolUse` fires when the
+      command is *launched*, so a twenty-minute command was recorded as done within a
+      second of starting.
+- [x] **Subagents pair by `agent_id`.** The id was in the payload the whole time — the
+      oldest-first close was working around a field nobody had read. Two agents finishing
+      out of order used to swap names on the card, and the row that vanished belonged to
+      the one still running. The `Stop` list reconciles what is left, so an agent older
+      than Perch gets a row too.
+- [x] **A subagent's tool calls stop moving the parent's card.** They arrive under the
+      parent's session id, carrying `agent_id`. Acting on them put the agent's command on
+      the parent's activity line and flipped the card out of its background state several
+      times a minute for the whole run. They still count as a sign of life — a session is
+      no longer aged out while its agent works, which used to delete the card, children and
+      all, and let the eventual `SubagentStop` recreate a blank untitled session at the
+      bottom of the list.
 - [ ] Completion-timing policy for subagents (as the root responds / after all finish /
       every completion)
 - [ ] Compaction *progress*, and interrupted / needs-attention states
