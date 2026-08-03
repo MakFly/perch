@@ -208,6 +208,7 @@ fi
 # --- 5. Build artefacts ----------------------------------------------------------
 
 for path in \
+  "$PERCH_ROOT/apps/mac/build.noindex" \
   "$PERCH_ROOT/apps/mac/build" \
   "$PERCH_ROOT/apps/mac/.build" \
   "$PERCH_ROOT/apps/api/node_modules"; do

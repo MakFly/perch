@@ -23,7 +23,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 MODE="${1:---check}"
 DIST="$PERCH_ROOT/dist"
-APP="$PERCH_ROOT/apps/mac/build/Perch.app"
+APP="$PERCH_ROOT/apps/mac/build.noindex/Perch.app"
 # Read from the bundle that is already there, which on a fresh checkout is none — hence the
 # fallback, and hence PERCH_VERSION taking precedence: CI knows the version from the tag
 # before anything has been built, and passes the same value on to make-app.sh.
@@ -62,7 +62,7 @@ build() {
 
 sign() {
   [ -n "${PERCH_SIGN_IDENTITY:-}" ] || fail "PERCH_SIGN_IDENTITY is not set"
-  local entitlements="$PERCH_ROOT/apps/mac/build/perch.entitlements"
+  local entitlements="$PERCH_ROOT/apps/mac/build.noindex/perch.entitlements"
 
   # The hook binary is a separate executable inside the bundle and has to be signed
   # before the bundle that contains it, or the outer signature seals a stale inner one.

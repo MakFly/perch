@@ -384,6 +384,7 @@ for app in \
   "$RECORDED_APP" \
   "/Applications/Perch.app" \
   "$HOME/Applications/Perch.app" \
+  "$SCRIPT_DIR/../apps/mac/build.noindex/Perch.app" \
   "$SCRIPT_DIR/../apps/mac/build/Perch.app"; do
   [ -n "$app" ] || continue
   [ -d "$app" ] || continue

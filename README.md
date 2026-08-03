@@ -39,8 +39,8 @@ already open.
 
 ```bash
 ./scripts/setup.sh                       # creates the `perch` database
-./apps/mac/Scripts/make-app.sh           # builds apps/mac/build/Perch.app
-open apps/mac/build/Perch.app
+./apps/mac/Scripts/make-app.sh           # builds apps/mac/build.noindex/Perch.app
+open apps/mac/build.noindex/Perch.app
 ./scripts/install-hooks.sh ~/my-project  # wires Claude Code into Perch
 ./scripts/install-hooks.sh --global      # …or once, for every project
 ./scripts/install-hooks.sh --codex       # …and Codex, if you use it

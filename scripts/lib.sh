@@ -28,7 +28,7 @@ case "$PERCH_ROOT" in
     PERCH_APP="${PERCH_APP:-$(cd "$PERCH_ROOT/../.." && pwd)}"
     ;;
   *)
-    PERCH_APP="${PERCH_APP:-$PERCH_ROOT/apps/mac/build/Perch.app}"
+    PERCH_APP="${PERCH_APP:-$PERCH_ROOT/apps/mac/build.noindex/Perch.app}"
     ;;
 esac
 

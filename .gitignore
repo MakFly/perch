@@ -9,7 +9,7 @@ apps/mac/Resources/Sprites/
 # Swift
 apps/mac/.build/
 dist/
-apps/mac/build/
+apps/mac/build.noindex/
 *.xcuserstate
 
 # API

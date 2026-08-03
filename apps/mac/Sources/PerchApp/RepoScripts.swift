@@ -10,8 +10,8 @@ import Foundation
 /// `Contents/Resources/scripts`, so an app dragged out of the DMG into `/Applications` can
 /// wire up the CLIs it found — without it, the onboarding's one button was a no-op on every
 /// machine that installed Perch the way people actually install things. A development build
-/// falls back to the repository around it (`apps/mac/build/Perch.app`), where the scripts
-/// are the originals rather than a copy and an edit takes effect without a rebuild.
+/// falls back to the repository around it (`apps/mac/build.noindex/Perch.app`), where the
+/// scripts are the originals rather than a copy and an edit takes effect without a rebuild.
 ///
 /// Still optional, and callers still handle `nil`: a bundle assembled without the copy is a
 /// valid bundle, and a button that silently does nothing is worse than no button.
@@ -24,7 +24,7 @@ enum RepoScripts {
         if let bundled, FileManager.default.fileExists(atPath: bundled.path) { return bundled }
 
         let root = Bundle.main.bundleURL
-            .deletingLastPathComponent()  // build/
+            .deletingLastPathComponent()  // build.noindex/
             .deletingLastPathComponent()  // mac/
             .deletingLastPathComponent()  // apps/
             .deletingLastPathComponent()  // repository root

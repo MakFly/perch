@@ -7,7 +7,9 @@ set -euo pipefail
 
 CONFIG="${1:-debug}"
 MAC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BUILD_DIR="$MAC_DIR/build"
+# The `.noindex` suffix is not decoration: Spotlight skips such directories, so the bundle
+# built here stops competing with the installed one for every search of the word "Perch".
+BUILD_DIR="$MAC_DIR/build.noindex"
 APP="$BUILD_DIR/Perch.app"
 
 # A release build is universal; a debug build is not.
