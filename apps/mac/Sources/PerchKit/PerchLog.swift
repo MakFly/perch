@@ -61,7 +61,9 @@ final class LogEngine: @unchecked Sendable {
     private let oslog: Logger
 
     // Neither formatter is documented thread-safe; both are touched only from `queue`,
-    // alongside the rest of the file-handling state below.
+    // alongside the rest of the file-handling state below. Both are pinned to the same zone
+    // in `init`, so a line's timestamp and the name of the file it lands in can never
+    // disagree about which day it is.
     //
     /// Local time with an offset, not UTC.
     ///
@@ -71,19 +73,8 @@ final class LogEngine: @unchecked Sendable {
     /// change lost real time deciding whether a 20:53 crash came before or after a 20:33
     /// log line, because the two were two hours apart in the wrong direction. Correlating
     /// a crash with what the app was doing is the only job this file has.
-    private let timestamp: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        formatter.timeZone = .current
-        return formatter
-    }()
-    private let day: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = .current
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        return formatter
-    }()
+    private let timestamp: ISO8601DateFormatter
+    private let day: DateFormatter
 
     private var handle: FileHandle?
     private var openDay: String?
@@ -98,16 +89,34 @@ final class LogEngine: @unchecked Sendable {
     static let defaultDirectory = URL(fileURLWithPath: NSHomeDirectory())
         .appendingPathComponent("Library/Logs/Perch", isDirectory: true)
 
+    /// `timeZone` is injectable for one reason: a test that pins it can prove the lines are
+    /// not in UTC, and one that reads `.current` cannot. On a runner whose clock is UTC —
+    /// which is every CI machine — a correct local timestamp *is* `Z`, so an assertion about
+    /// the offset passes or fails on where the test happens to run rather than on what the
+    /// code does. Found by CI going red on exactly that.
     init(
         directory: URL = LogEngine.defaultDirectory,
         retention: TimeInterval = 24 * 60 * 60,
         sweepInterval: TimeInterval = 60 * 60,
+        timeZone: TimeZone = .current,
         subsystem: String = "tech.kweli.perch",
         category: String = "app"
     ) {
         self.directory = directory
         self.retention = retention
         self.oslog = Logger(subsystem: subsystem, category: category)
+
+        let timestamp = ISO8601DateFormatter()
+        timestamp.formatOptions = [.withInternetDateTime]
+        timestamp.timeZone = timeZone
+        self.timestamp = timestamp
+
+        let day = DateFormatter()
+        day.dateFormat = "yyyy-MM-dd"
+        day.timeZone = timeZone
+        day.locale = Locale(identifier: "en_US_POSIX")
+        self.day = day
+
         startSweeping(every: sweepInterval)
     }
 

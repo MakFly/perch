@@ -115,16 +115,26 @@ private func todayFilename() -> String {
 /// A line's timestamp has to be readable beside a `.ips` crash report, which macOS writes
 /// in local time. UTC here would mean correlating the two through a mental offset — and a
 /// reviewer of this change got that wrong by two hours, on this exact file.
+/// The zone is pinned rather than read from the machine, because the first version of this
+/// test asserted the timestamp was not UTC and CI runs in UTC — where a correct local
+/// timestamp *is* `Z`. It went red on a runner having done nothing wrong, which is the
+/// signature of a test measuring its environment instead of its subject.
 @Test func linesAreTimestampedInLocalTimeLikeTheCrashReports() {
     let directory = makeTempDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
 
-    let engine = LogEngine(directory: directory, subsystem: testSubsystem)
+    // Nine hours off UTC and no daylight saving, so the offset is unmistakable and stable.
+    let tokyo = TimeZone(identifier: "Asia/Tokyo")!
+    let engine = LogEngine(directory: directory, timeZone: tokyo, subsystem: testSubsystem)
     engine.log(.error, "something to timestamp", file: #fileID, line: #line)
 
-    let contents =
-        (try? String(
-            contentsOf: directory.appendingPathComponent(todayFilename()), encoding: .utf8)) ?? ""
+    let day = DateFormatter()
+    day.dateFormat = "yyyy-MM-dd"
+    day.timeZone = tokyo
+    day.locale = Locale(identifier: "en_US_POSIX")
+    let url = directory.appendingPathComponent("perch-\(day.string(from: Date())).log")
+
+    let contents = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
     let stamp = String(contents.prefix(19))  // yyyy-MM-ddTHH:mm:ss
 
     // The assertion is on the *text*, not on the instant it denotes. Parsing the line back
@@ -134,12 +144,17 @@ private func todayFilename() -> String {
     // is the wall clock somebody reads off the line.
     let wallClock = DateFormatter()
     wallClock.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-    wallClock.timeZone = .current
+    wallClock.timeZone = tokyo
     wallClock.locale = Locale(identifier: "en_US_POSIX")
 
-    #expect(stamp == wallClock.string(from: Date()) || stamp == wallClock.string(from: Date(timeIntervalSinceNow: -1)))
-    // And the offset is spelled out, so nobody has to know which zone the Mac was in.
-    #expect(!contents.hasPrefix(stamp + "Z"))
+    #expect(
+        stamp == wallClock.string(from: Date())
+            || stamp == wallClock.string(from: Date(timeIntervalSinceNow: -1)))
+    // And the offset is spelled out, so nobody has to know which zone the Mac was in. True
+    // on any runner now, because the zone under test is not the runner's.
+    #expect(contents.hasPrefix(stamp + "+09:00"))
+    // The file the line landed in agrees with the line about which day it is.
+    #expect(FileManager.default.fileExists(atPath: url.path))
 }
 
 /// A sweep that deletes the file being written to must not leave the writer writing into
