@@ -8,11 +8,14 @@ import Foundation
 /// already true before this conformance existed; the conformance only stops it being an
 /// accident.
 ///
-/// It is sound because the connection is opened with `sqlite3_open`, and the SQLite that
-/// ships with macOS is built `SQLITE_THREADSAFE=1` (serialized): the library takes its own
-/// mutex per call, so one connection used from several threads is a supported
-/// configuration rather than a race that has not happened yet. Anything here that stops
-/// being a single connection has to revisit this.
+/// It is sound because `SQLiteDatabase` serialises every call into the connection behind a
+/// lock of its own. It is *not* sound because of anything SQLite does for us: this comment
+/// used to claim macOS shipped a `SQLITE_THREADSAFE=1` (serialized) build, so that sharing
+/// one connection across threads was supported. That was wrong, and the crashes were the
+/// bill. Measured on 03-08-2026, SQLite 3.51.0: `sqlite3_threadsafe()` returns **2**,
+/// multi-thread — no mutex on the connection at all. `SQLiteConcurrencyTests` pins both the
+/// platform fact and the behaviour; it takes the test process down with `SIGSEGV` against a
+/// connection that does not serialise.
 public final class UsageStore: @unchecked Sendable {
     public enum Granularity: String, Sendable, CaseIterable {
         case minute, hour, day, month
@@ -193,43 +196,51 @@ public final class UsageStore: @unchecked Sendable {
         guard !events.isEmpty else { return 0 }
 
         return try database.transaction {
-            let statement = try database.prepare(
+            try database.statement(
                 """
                 INSERT OR IGNORE INTO usage_event
                     (msg_id, request_id, ts, model, input, output,
                      cache_read, cache_write_5m, cache_write_1h, cost, session_id, cwd,
                      agent)
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
-                """)
-            defer { statement.finalize() }
-
-            var inserted = 0
-            for event in events {
-                statement.bind(1, event.messageId)
-                statement.bind(2, event.requestId)
-                statement.bind(3, Int(event.timestamp.timeIntervalSince1970))
-                statement.bind(4, event.model)
-                statement.bind(5, event.inputTokens)
-                statement.bind(6, event.outputTokens)
-                statement.bind(7, event.cacheReadTokens)
-                statement.bind(8, event.cacheWrite5mTokens)
-                statement.bind(9, event.cacheWrite1hTokens)
-                // What the agent says it was billed, when it says so. opencode prices each
-                // message itself, against a list that covers every provider it can reach;
-                // deriving that from Perch's own table would report the models it does not
-                // carry at zero, which reads as free rather than as unpriced.
-                statement.bind(10, event.cost ?? Pricing.cost(of: event))
-                statement.bind(11, event.sessionId)
-                statement.bind(12, event.cwd)
-                statement.bind(13, event.agent.rawValue)
-                try statement.step()
-                inserted += changesInLastStatement()
-                statement.reset()
+                """
+            ) { statement in
+                var inserted = 0
+                for event in events {
+                    statement.bind(1, event.messageId)
+                    statement.bind(2, event.requestId)
+                    statement.bind(3, Int(event.timestamp.timeIntervalSince1970))
+                    statement.bind(4, event.model)
+                    statement.bind(5, event.inputTokens)
+                    statement.bind(6, event.outputTokens)
+                    statement.bind(7, event.cacheReadTokens)
+                    statement.bind(8, event.cacheWrite5mTokens)
+                    statement.bind(9, event.cacheWrite1hTokens)
+                    // What the agent says it was billed, when it says so. opencode prices
+                    // each message itself, against a list that covers every provider it can
+                    // reach; deriving that from Perch's own table would report the models it
+                    // does not carry at zero, which reads as free rather than as unpriced.
+                    statement.bind(10, event.cost ?? Pricing.cost(of: event))
+                    statement.bind(11, event.sessionId)
+                    statement.bind(12, event.cwd)
+                    statement.bind(13, event.agent.rawValue)
+                    try statement.step()
+                    inserted += changesInLastStatement()
+                    statement.reset()
+                }
+                return inserted
             }
-            return inserted
         }
     }
 
+    /// How many rows the statement just stepped actually wrote.
+    ///
+    /// `changes()` is a property of the *connection*, not of the statement — it reports
+    /// whatever wrote last on it, from any thread. That made this a silent miscount as well
+    /// as a crash: a read on another thread landing between the `step` above and this query
+    /// would have attributed its own zero to our insert, and the panel would have decided
+    /// there was nothing new to reload. It is correct now because the whole `insert` body
+    /// runs under the connection lock, and this call is inside it.
     private func changesInLastStatement() -> Int {
         var count = 0
         try? database.query("SELECT changes()") { count = $0.int(0) }
@@ -266,16 +277,17 @@ public final class UsageStore: @unchecked Sendable {
     }
 
     func setCursor(_ cursor: Cursor, forPath path: String) throws {
-        let statement = try database.prepare(
+        try database.statement(
             """
             INSERT INTO file_cursor (path, inode, offset) VALUES (?1, ?2, ?3)
             ON CONFLICT(path) DO UPDATE SET inode = ?2, offset = ?3
-            """)
-        defer { statement.finalize() }
-        statement.bind(1, path)
-        statement.bind(2, cursor.inode)
-        statement.bind(3, cursor.offset)
-        try statement.step()
+            """
+        ) { statement in
+            statement.bind(1, path)
+            statement.bind(2, cursor.inode)
+            statement.bind(3, cursor.offset)
+            try statement.step()
+        }
     }
 
     // MARK: - Reading

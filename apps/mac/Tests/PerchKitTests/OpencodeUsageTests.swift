@@ -58,18 +58,19 @@ private func append(_ rows: [(id: String, session: String, updated: Int, data: S
 {
     let database = try SQLiteDatabase(path: url.path)
     for row in rows {
-        let statement = try database.prepare(
+        try database.statement(
             """
             INSERT OR REPLACE INTO message (id, session_id, time_created, time_updated, data)
             VALUES (?1, ?2, ?3, ?4, ?5)
-            """)
-        defer { statement.finalize() }
-        statement.bind(1, row.id)
-        statement.bind(2, row.session)
-        statement.bind(3, row.updated)
-        statement.bind(4, row.updated)
-        statement.bind(5, row.data)
-        try statement.step()
+            """
+        ) { statement in
+            statement.bind(1, row.id)
+            statement.bind(2, row.session)
+            statement.bind(3, row.updated)
+            statement.bind(4, row.updated)
+            statement.bind(5, row.data)
+            try statement.step()
+        }
     }
 }
 

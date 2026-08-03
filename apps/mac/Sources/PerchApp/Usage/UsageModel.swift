@@ -131,7 +131,16 @@ final class UsageModel {
                 // what was indexed before it — unless it is asked to. Idempotent, but not
                 // free: the predicate is `cost = 0`, which no index covers, so it is a scan
                 // of the whole table. Only worth paying for when the table has just grown.
-                if hasNewRows { _ = try? store?.repriceUnpriced() }
+                //
+                // Detached, like every other store call here. This was the one left on the
+                // main actor, where it was measured at 77 ms of scan on a 132 000-row store
+                // before it writes anything — and now that the connection is behind a lock,
+                // it also waits there for whatever detached read holds it. The notch draws
+                // on this thread; it should not be counting tokens on it.
+                if hasNewRows, let store {
+                    await Task.detached(priority: .utility) { _ = try? store.repriceUnpriced() }
+                        .value
+                }
             case .failure(let error):
                 indexError = "\(error)"
             }
