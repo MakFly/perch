@@ -234,6 +234,8 @@ struct NotchRootView: View {
         case .plan(let request):
             PlanCardView(
                 request: request,
+                // Less the 14pt of padding either side that `alertContent` applies.
+                contentWidth: controller.panelSize.width - 28,
                 approve: { model.approvePlan($0) },
                 reject: { model.rejectPlan(feedback: $0) }
             )

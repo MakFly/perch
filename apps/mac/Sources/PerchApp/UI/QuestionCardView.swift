@@ -235,24 +235,6 @@ private struct OptionRow: View {
     }
 }
 
-extension PlanCardView {
-    /// The plan, as Markdown, falling back to the raw text when it will not parse.
-    ///
-    /// `.full` rather than `.inlineOnlyPreservingWhitespace`: a plan's structure *is* its
-    /// headings and bullets, and dropping them to keep the newlines was the previous
-    /// behaviour by accident. Blank lines are preserved before parsing, because
-    /// `AttributedString` collapses paragraph breaks that the plan needs.
-    var styledPlan: AttributedString {
-        let options = AttributedString.MarkdownParsingOptions(
-            interpretedSyntax: .full, failurePolicy: .returnPartiallyParsedIfPossible)
-        let spaced = request.plan.replacingOccurrences(of: "\n", with: "\n\n")
-        if let parsed = try? AttributedString(markdown: spaced, options: options) {
-            return parsed
-        }
-        return AttributedString(request.plan)
-    }
-}
-
 /// Approving a plan, or sending back what to change.
 ///
 /// Denying with a message is not a refusal here — Claude Code reads it as feedback and
@@ -262,6 +244,9 @@ extension PlanCardView {
 /// asks, and one button saying "Approve" could only ever guess which one it meant.
 struct PlanCardView: View {
     let request: PlanApprovalRequest
+    /// What the panel is drawn at, less its padding. Code blocks are never wrapped, so the
+    /// only way they can be made to fit is to be measured against this.
+    var contentWidth: CGFloat = NotchState.alertWidth
     let approve: (PlanMode) -> Void
     let reject: (String) -> Void
 
@@ -280,22 +265,19 @@ struct PlanCardView: View {
             }
 
             ScrollView {
-                // Rendered as Markdown, because that is what it is. A plan is the longest
-                // thing Perch ever shows and it arrived as one undifferentiated block of
-                // mono — headings, bullets and code spans all looking like prose, which is
-                // the state in which nobody reads it and everybody approves it.
-                Text(styledPlan)
-                    .font(Theme.mono(11))
-                    .foregroundStyle(Theme.secondary)
-                    .textSelection(.enabled)
+                // Block by block, because a plan's structure is the plan. Passing the whole
+                // document through `AttributedString(markdown:)` parsed the syntax and then
+                // dropped every block boundary — a heading welded to the paragraph under it
+                // and an ASCII diagram double-spaced into nonsense, which is the state in
+                // which nobody reads it and everybody approves it.
+                MarkdownText(request.plan, density: .reading, width: contentWidth - 32)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.trailing, 4)
             }
-            // Three times what it was. The card is sized for its content — see
-            // `AppModel.extraHeight` — and a plan is the one payload worth spending the
-            // screen on: it is the decision with the most in it and the least room to
-            // read it.
-            .frame(maxHeight: 420)
+            // The card is sized for its content — see `PlanCard.extraHeight` — so this cap
+            // is the overflow case rather than the normal one. Shared with the sizing so
+            // the two cannot disagree about where the plan stops fitting.
+            .frame(maxHeight: PlanCard.maxBodyHeight)
             .scrollIndicators(.automatic)
 
             TextField(t("Tell Claude what to change…"), text: $feedback)

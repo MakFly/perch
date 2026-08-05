@@ -499,11 +499,16 @@ final class AppModel {
             // the one thing the card would not show you.
             return QuestionCard.extraHeight(
                 for: request, width: NotchState.alertWidth + extraWidth(for: kind))
-        case .plan:
+        case .plan(let request):
             // A plan gets the screen. It is the longest thing Perch shows, the one with
             // the most consequence behind the button, and it was being read through a
             // 150pt slot — which is how a plan gets approved unread.
-            return 430
+            //
+            // Measured rather than flat, for the same reason a question is: 430 was the
+            // right number for a long plan and half a screen of black under a five-line
+            // one.
+            return PlanCard.extraHeight(
+                for: request, width: NotchState.alertWidth + extraWidth(for: kind))
         case .permission:
             return 0
         }

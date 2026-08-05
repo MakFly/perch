@@ -109,8 +109,13 @@ enum Diagnostics {
     @MainActor
     static func render(
         _ path: String, layout: PanelLayout = .detailed, idle: Bool = false,
-        phases: Bool = false, stats: UsageStore.Agent? = nil
+        phases: Bool = false, plan: Bool = false, stats: UsageStore.Agent? = nil
     ) -> Int32 {
+        if plan {
+            // The card with the most structure in it, and the only one whose defects are
+            // all about block boundaries — which a still image shows and a test cannot.
+            return write(ImageRenderer(content: PanelPreview.planScene()), to: path)
+        }
         if let stats {
             // Real numbers, from this machine's index — the point of drawing this pane is
             // to see which agents it offers and what they add up to, and a fabricated one

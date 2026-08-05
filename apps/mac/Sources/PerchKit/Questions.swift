@@ -192,6 +192,10 @@ public enum QuestionCard {
 public struct PlanApprovalRequest: Sendable, Equatable {
     public var plan: String
 
+    public init(plan: String) {
+        self.plan = plan
+    }
+
     public static func parse(_ toolInput: JSONValue?) -> PlanApprovalRequest? {
         guard let plan = toolInput?["plan"]?.stringValue, !plan.isEmpty else { return nil }
         return PlanApprovalRequest(plan: plan)

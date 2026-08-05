@@ -29,6 +29,80 @@ enum PanelPreview {
         .background(Theme.surface)
     }
 
+    /// The plan's body, at the width the panel actually gives it.
+    ///
+    /// Its own scene because a plan is the one payload with block structure in it —
+    /// headings, numbered steps, a fenced diagram and an unfenced one — and every way it
+    /// can be got wrong is a way blocks run together. The two diagrams are the point: one
+    /// that fits and one deliberately wider than the panel, so the fit-then-scroll path is
+    /// visible rather than assumed.
+    ///
+    /// The body rather than the whole card: `ImageRenderer` draws a `ScrollView` as an
+    /// empty box, and the card's body scrolls. The chrome around it is three rows that a
+    /// still image has nothing to say about.
+    static func planScene() -> some View {
+        let width = NotchState.alertWidth + 140
+
+        return VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 8) {
+                Image(systemName: "list.bullet.rectangle")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.info)
+                Text("Plan")
+                    .font(Theme.label(12, .semibold))
+                    .foregroundStyle(Theme.primary)
+                Spacer(minLength: 0)
+            }
+
+            MarkdownText(examplePlan, density: .reading, width: width - 60)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(width: width, alignment: .topLeading)
+        .background(Theme.surface)
+    }
+
+    private static let examplePlan = """
+        ## Décisions
+
+        La clé n'est jamais validée par le schéma zod de `config.ts`. Un schéma fixe
+        imposerait d'éditer un fichier produit à chaque fournisseur ajouté.
+
+        ### Architecture
+
+        ```
+        ┌──────────────────────┐
+        │ models.dev/api.json  │──┐
+        └──────────────────────┘  │     ┌──────────────────┐
+                                  ├────▶│ fusion + ALIASES │
+        ┌──────────────────────┐  │     └──────────────────┘
+        │ hermes_cli/models.py │──┘
+        └──────────────────────┘
+        ```
+
+        Et un second, plus large que le panneau : il rétrécit jusqu'à tenir plutôt que de
+        se replier.
+
+        ```
+        ai_providers          id (pk), label, description, auth, base_url, models_url, env_var, synced_at
+        ai_provider_models    provider_id (fk cascade), model, sort_order   -- pk (provider_id, model)
+        ```
+
+        ### Étapes
+
+        1. Tables et migration — `0009_add_ai_catalog`
+        2. Port `AiCatalogRepository`, sur le patron sqlite/postgres de `ai-usage.ts`
+           avec les deux schémas déclarés face à face
+        3. Le script `sync-hermes-catalog.ts` réécrit — trois fetch, une fusion, une
+           écriture
+
+        - `CANONICAL_PROVIDERS` décide de la liste et de l'ordre
+        - `ALIASES` donne l'id models.dev
+          - et `HERMES_OVERLAYS` corrige ce que models.dev ne sait pas
+
+        > Un bloc que le script ne sait pas lire est signalé et sauté, jamais deviné.
+        """
+
     /// The Stats pane, drawn from the real index rather than from fabricated sessions.
     ///
     /// The rest of this file invents its data, because a card's shape is what is being

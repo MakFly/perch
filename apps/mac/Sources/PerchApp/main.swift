@@ -96,6 +96,8 @@ if let index = CommandLine.arguments.firstIndex(of: "--render") {
             // `--phases` draws every state in its own shape, over a menu bar.
             idle: CommandLine.arguments.contains("--idle"),
             phases: CommandLine.arguments.contains("--phases"),
+            // `--plan` draws the plan card on its own, at the width the panel gives it.
+            plan: CommandLine.arguments.contains("--plan"),
             // `--render x.png --stats opencode` draws the Stats pane for one agent, off
             // this machine's own index. The tabs are the one part of that pane no
             // fabricated scene can stand in for: whether they are right is a question
