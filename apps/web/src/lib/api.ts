@@ -142,7 +142,7 @@ export function fetchHealth() {
  * function to keep warm, nothing to rate-limit. `latest/download/<name>` is resolved by
  * GitHub, so the asset ships under a fixed name as well as a versioned one.
  */
-export const REPO = "MakFly/perch"
+export const REPO = "dev-toolings/perch"
 export const DOWNLOAD_URL = `https://github.com/${REPO}/releases/latest/download/Perch.dmg`
 
 export interface Release {
